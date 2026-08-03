@@ -6,7 +6,7 @@ import(
 	"API2/models"
 )
 
-func CallApi2(w http.ResponseWriter, r *http.Request){
+func CallApi1(w http.ResponseWriter, r *http.Request){
 	w.Header().Set("Content-Type", "application/json")
 	resp, err := http.Get("http://192.168.122.10:8080/health")
 	if err != nil{
