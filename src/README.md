@@ -117,6 +117,8 @@ Esto se hace para quemar la ip hacia donde se deben las peticiones de las apis
 usaremos ssh para copiar los archvos de nuestra maquina host a la VM3 donde crearemos nuestras imagenes
 
 ### Requisitos
+
+#### Paquetes
 Instalamos ssh en la VM3 usando pamcan y despues habilitanto el servicio de ssh
 ```bash
 sudo pacman -S openssh
@@ -128,3 +130,37 @@ Una vez realizado la instalacion y habilitacion de ssh usaremos scp para copiar 
 ```bash
 scp -r /ruta/202201117_LAB_SO1_2S2026/ mike@192.168.122.12:/home/mike
 ```
+### INSTALACION ZOT
+
+Para poder correr zot de primero debemos instalar docker y git en nuestra VM y lo haremos con el siguiente comando, para luego habilitar el servicio de docker y lo agregamos al grupo de usuarios
+```bash
+sudo pacman -S git docker
+sudo systemctl enable --now docker
+usermod -aG docker $USER
+```
+
+Luego con docker creamos un contenedor con la ulitmima imagen zot diponible, en el caso de la maquina host es AMD se usara esa version, con el comando para levatar zot en el puerto 5000
+
+```bash
+docker run -d -p 5000:5000 --name zot-registry --name zot ghcr.io/project-zot/zot-linux-amd64:latest
+```
+
+Una vez con el contenedor de zot corriendo en la VM3 lo que haremos es crear la imagen de las API, asegunrandonos que estemos en la carpeta donde se encuentre el Dockerfile de la API. Este comando lo podemos ejectoras con el resto de los dockerfiles de las API cambiando entre carpetas
+```bash
+docker build -t apiX-202201117 .
+```
+
+Una vez ya con las imagenes creadas necesitamos tagearlas para subirlas a zot y poder referenciarlas.
+
+```bash 
+docker tag apiX-202201117 localhost:5000/apiX-202201117
+```
+
+Ya una vez taggeada la imagen debemos hacer el push referenciando el tag de las imagenes con docker push
+```bash
+docker push localhost:5000/apiX-202201117
+```
+
+Para revisarlas imagenes que tenemos en zot tenemos que hacer un request a `localhost:5000/v2/_catalog` para verificar que se haya subido correctamente
+
+![catalog](imgs/_catalog.png)
