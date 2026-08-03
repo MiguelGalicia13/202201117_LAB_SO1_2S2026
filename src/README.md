@@ -74,3 +74,40 @@ sudo pacman -Syu
 ![alt text](imgs/pacman.png)
 
 y repetimos el mismo proceso para las otras 2 maquinas virtuales
+
+### 5. CONFIGURACION IP ESTATICA
+
+Con el siguiente comando obtendremos todas nuestras VM y a partir de estos podremos ver la informacion de sus direcciones.
+```bash
+sudo virsh list --all
+```
+![lista](imgs/list.png)
+
+ya con esta lista de las VM ejecutamos el comando 
+```bash
+sudo virsh domiflist *nombre de la VM*
+```
+para obtener la direccion MAC su direccion mac para asignarle una ip estatica
+
+![mac](imgs/domiflist.png)
+
+una vez con las direcciones, en la maquina host debemos editar el XML de la red, en este caso con el comando  net-edit default. Utilizamos la flag EDITOR para seleccionar que edictor de texto queremos utilizar, en el caso de este proyecto usaremos NeoVim (nvim)
+```bash
+sudo EDITOR=nvim virsh net-edit default
+```
+
+Una vez adentro del archivo de configuracion buscaremos la etiquieta de DHCP y agregamos una entrada host por cada VM que vamos a configurar. Asi obtenemos este resultado
+
+```XML
+<host mac='52:54:00:82:7f:f7' name='VM1_202201117' ip='192.168.122.10'/>
+<host mac='52:54:00:56:f1:9d' name='VM2_202201117' ip='192.168.122.11'/>
+<host mac='52:54:00:f7:c6:15' name='VM3_202201117' ip='192.168.122.12'/>
+```
+
+Una vez con esta configuracion reiniciamos la red para aplicar los cambios con:
+```bash
+sudo virsh net-destroy default
+sudo virsh net-start default
+```
+
+Esto se hace para quemar la ip hacia donde se deben las peticiones de las apis
