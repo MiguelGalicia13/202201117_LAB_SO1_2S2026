@@ -8,7 +8,7 @@ import(
 
 func CallApi3(w http.ResponseWriter, r *http.Request){
 	w.Header().Set("Content-Type", "application/json")
-	resp, err := http.Get("http://192.168.122.11:8081/health")
+	resp, err := http.Get("http://192.168.122.11:8080/health")
 	if err != nil{
 		w.WriteHeader(http.StatusServiceUnavailable)
 		response := models.CallResponse{
