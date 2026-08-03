@@ -111,3 +111,20 @@ sudo virsh net-start default
 ```
 
 Esto se hace para quemar la ip hacia donde se deben las peticiones de las apis
+
+## SETUP DE VM3
+
+usaremos ssh para copiar los archvos de nuestra maquina host a la VM3 donde crearemos nuestras imagenes
+
+### Requisitos
+Instalamos ssh en la VM3 usando pamcan y despues habilitanto el servicio de ssh
+```bash
+sudo pacman -S openssh
+sudo systemctl enable --now sshd
+```
+
+Una vez realizado la instalacion y habilitacion de ssh usaremos scp para copiar el codigo desde la maquina host hasta la vm
+
+```bash
+scp -r /ruta/202201117_LAB_SO1_2S2026/ mike@192.168.122.12:/home/mike
+```
