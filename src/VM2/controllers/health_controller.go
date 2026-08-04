@@ -16,7 +16,7 @@ func HealthCheck(w http.ResponseWriter, r *http.Request) {
 		Status:    "UP",
 		Service:   "API3 is ready",
 		Timestamp: time.Now().Format(time.RFC3339),
-		Vm: 3,
+		Vm: 2,
 		Carnet: 202201117,
 	}
 
