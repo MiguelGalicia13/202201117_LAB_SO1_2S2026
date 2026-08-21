@@ -96,31 +96,6 @@ flowchart TD
     SendFail --> EndClient
 ```
 
-### 2. Diagrama de Secuencia de Llamadas Distribuidas
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Cliente as Cliente (Host / curl)
-    participant API1 as API 1 (VM1 :8080)
-    participant API2 as API 2 (VM1 :8081)
-    participant API3 as API 3 (VM2 :8080)
-
-    Note over Cliente,API3: Caso 1: Consulta directa de salud local
-    Cliente->>+API1: GET http://192.168.122.10:8080/health
-    API1-->>-Cliente: 200 OK {"status":"UP", "message":"API1 is ready", "VM":1, "carnet":202201117}
-
-    Note over Cliente,API3: Caso 2: Intercomunicación exitosa entre VM1 y VM2
-    Cliente->>+API1: GET http://192.168.122.10:8080/api1/202201117/call-api3
-    API1->>+API3: GET http://192.168.122.11:8080/health
-    API3-->>-API1: 200 OK {"status":"UP", ...}
-    API1-->>-Cliente: 200 OK {"apiname":"API3", "message":"The API3 located on the VM2 is working", "connection":true, "carnet":202201117}
-
-    Note over Cliente,API3: Caso 3: Fallo cuando un servicio destino está apagado/inaccesible
-    Cliente->>+API1: GET http://192.168.122.10:8080/api1/202201117/call-api2
-    API1-xAPI2: GET http://192.168.122.10:8081/health (Conexión rechazada / Timeout)
-    API1-->>-Cliente: 503 Service Unavailable {"apiname":"API2", "message":"ERROR: The API2 located on the VM1 is not working", "connection":false, "carnet":202201117}
-```
 
 ---
 
