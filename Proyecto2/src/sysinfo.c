@@ -108,57 +108,70 @@ static int sysinfo_show(struct seq_file *m, void *v) {
         if (strcmp(task->comm, "containerd-shim") == 0) {
             unsigned long total_vsz = 0;
             unsigned long total_rss = 0;
-            u64 total_cpu_ns = 0;
-            u64 start_time_ns = 0;
             char *cmdline = NULL;
             unsigned long mem_usage = 0;
             unsigned long cpu_usage = 0;
-            if (task->mm) {
-                // Obtenemos el uso de vsz haciendo un shift de PAGE_SHIFT - 10, un PAGE_SHIFT es la cantidad de bits que se necesitan para representar un byte
-                // dividimos entre 1024 para obtener los datos en MB
-                total_vsz = (task->mm->total_vm << (PAGE_SHIFT - 10))/1024;
-                // Obtenemos el uso de rss haciendo un shift de PAGE_SHIFT - 10
-                total_rss = (get_mm_rss(task->mm) << (PAGE_SHIFT - 10))/1024;
-                // Obtenemos el uso de memoria en porcentaje
-                mem_usage = (total_rss * 100) / totalram_mb;
-            }
-            unsigned long total_time = task->utime + task->stime;
-            cpu_usage = (total_time * 10000) /  total_jiffies;
-            cmdline = get_process_cmdline(task);
-            if(!first_process){
-                seq_printf(m, ",\n");
-            }else{
-                first_process = 0;
-            }
+            int target_pid = task->pid;
+            char target_name[TASK_COMM_LEN];
             struct task_struct *child;
-            list_for_each_entry(child, &task->children, sibling){
-                if(child->mm){
-                    total_rss =( get_mm_rss(child->mm)<<(PAGE_SHIFT-10))/1024;
-                    mem_usage = (total_rss*1000)/totalram_mb;
+            struct task_struct *target_task = task;
 
-                    unsigned long total_time_child = child->utime + child->stime;
-                    u64 time_since_start_jiffies = get_jiffies_64();
+            strncpy(target_name, task->comm, sizeof(target_name));
+            target_name[sizeof(target_name) - 1] = '\0';
 
-                    if(time_since_start_jiffies > 0 && total_jiffies >0){
-                        cpu_usage = (total_time_child *100)/total_jiffies;
-                        cpu_usage = cpu_usage/num_online_cpus();
-                    }else{
-                        cpu_usage = 67; //evita valores no validos
-                    }
-                    break; //  salimos despues del primer hijo
-                    
+            // Buscar si tiene proceso hijo (el proceso dentro del contenedor)
+            list_for_each_entry(child, &task->children, sibling) {
+                if (child->mm) {
+                    target_task = child;
+                    target_pid = child->pid;
+                    strncpy(target_name, child->comm, sizeof(target_name));
+                    target_name[sizeof(target_name) - 1] = '\0';
+                    break;
                 }
             }
 
+            if (target_task->mm) {
+                total_vsz = (target_task->mm->total_vm << (PAGE_SHIFT - 10)) / 1024;
+                total_rss = (get_mm_rss(target_task->mm) << (PAGE_SHIFT - 10)) / 1024;
+                if (totalram_mb > 0) {
+                    mem_usage = (total_rss * 1000) / totalram_mb;
+                }
+            }
+
+            unsigned long total_time = target_task->utime + target_task->stime;
+            unsigned int cpus = num_online_cpus();
+            if (cpus == 0) cpus = 1;
+
+            if (total_jiffies > 0) {
+                cpu_usage = (total_time * 10000) / total_jiffies;
+                cpu_usage = cpu_usage / cpus;
+            }
+
+            cmdline = get_process_cmdline(target_task);
+            if (!cmdline && target_task != task) {
+                cmdline = get_process_cmdline(task);
+            }
+
+            if (!first_process) {
+                seq_printf(m, ",\n");
+            } else {
+                first_process = 0;
+            }
+
             seq_printf(m, "     {\n");
-            seq_printf(m, "        \"PID\": %d,\n", task->pid);
-            seq_printf(m, "        \"Name\": \"%s\",\n", task->comm);
+            seq_printf(m, "        \"PID\": %d,\n", target_pid);
+            seq_printf(m, "        \"Name\": \"%s\",\n", target_name);
             seq_printf(m, "        \"Cmdline\": \"%s\",\n", cmdline ? cmdline : "N/A");
             seq_printf(m, "        \"vsz\": %lu,\n", total_vsz);
             seq_printf(m, "        \"rss\": %lu,\n", total_rss);
             seq_printf(m, "        \"Memory_Usage\": %lu.%lu,\n", mem_usage / 10, mem_usage % 10);
             seq_printf(m, "        \"CPU_Usage\": %lu.%lu\n", cpu_usage / 100, cpu_usage % 100);
             seq_printf(m, "     }");
+
+            if (cmdline) {
+                kfree(cmdline);
+                cmdline = NULL;
+            }
             
         }
     }

@@ -13,7 +13,10 @@ unload:
 	sudo rmmod sysinfo
 
 update:
-	unload && clean && all && load
+	$(MAKE) unload || true
+	$(MAKE) clean
+	$(MAKE) all
+	$(MAKE) load
 log:
 	sudo dmesg | tail -20
 show:
