@@ -17,6 +17,7 @@
 #include <linux/sched/mm.h>
 #include <linux/binfmts.h>
 #include <linux/timekeeping.h>
+//#include <time.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Miguel Galicia");
@@ -87,6 +88,7 @@ static int sysinfo_show(struct seq_file *m, void *v) {
     unsigned long totalram_kb;
     unsigned long freeram_kb;
     u64 now_ns = ktime_get_ns();
+    unsigned long total_jiffies = jiffies;
 
     si_meminfo(&si);
     totalram_kb = si.totalram << (PAGE_SHIFT - 10);
@@ -104,7 +106,6 @@ static int sysinfo_show(struct seq_file *m, void *v) {
     for_each_process(task) {
         // Identificar el supervisor de containerd
         if (strcmp(task->comm, "containerd-shim") == 0) {
-            struct task_struct *child, *main_child = NULL;
             unsigned long total_vsz = 0;
             unsigned long total_rss = 0;
             u64 total_cpu_ns = 0;
@@ -112,58 +113,53 @@ static int sysinfo_show(struct seq_file *m, void *v) {
             char *cmdline = NULL;
             unsigned long mem_usage = 0;
             unsigned long cpu_usage = 0;
-            unsigned long vsz_mb;
-            unsigned long rss_mb;
-            // Recorrer todos los hijos del containerd-shim (procesos dentro del contenedor)
-            list_for_each_entry(child, &task->children, sibling) {
-                if (child->mm) {
-                    if (!main_child) {
-                        main_child = child;
-                        start_time_ns = child->start_time;
+            if (task->mm) {
+                // Obtenemos el uso de vsz haciendo un shift de PAGE_SHIFT - 10, un PAGE_SHIFT es la cantidad de bits que se necesitan para representar un byte
+                // dividimos entre 1024 para obtener los datos en MB
+                total_vsz = (task->mm->total_vm << (PAGE_SHIFT - 10))/1024;
+                // Obtenemos el uso de rss haciendo un shift de PAGE_SHIFT - 10
+                total_rss = (get_mm_rss(task->mm) << (PAGE_SHIFT - 10))/1024;
+                // Obtenemos el uso de memoria en porcentaje
+                mem_usage = (total_rss * 100) / totalram_mb;
+            }
+            unsigned long total_time = task->utime + task->stime;
+            cpu_usage = (total_time * 10000) /  total_jiffies;
+            cmdline = get_process_cmdline(task);
+            if(!first_process){
+                seq_printf(m, ",\n");
+            }else{
+                first_process = 0;
+            }
+            struct task_struct *child;
+            list_for_each_entry(child, &task->children, sibling){
+                if(child->mm){
+                    total_rss =( get_mm_rss(child->mm)<<(PAGE_SHIFT-10))/1024;
+                    mem_usage = (total_rss*1000)/totalram_mb;
+
+                    unsigned long total_time_child = child->utime + child->stime;
+                    u64 time_since_start_jiffies = get_jiffies_64();
+
+                    if(time_since_start_jiffies > 0 && total_jiffies >0){
+                        cpu_usage = (total_time_child *100)/total_jiffies;
+                        cpu_usage = cpu_usage/num_online_cpus();
+                    }else{
+                        cpu_usage = 67; //evita valores no validos
                     }
-                    total_vsz += child->mm->total_vm << (PAGE_SHIFT - 10);
-                    total_rss += get_mm_rss(child->mm) << (PAGE_SHIFT - 10);
-                    total_cpu_ns += (child->utime + child->stime);
-                    vsz_mb = total_vsz / 1024;
-                    rss_mb = total_rss / 1024;
+                    break; //  salimos despues del primer hijo
+                    
                 }
             }
-            // Si se detectó el proceso principal del contenedor
-            if (main_child) {
-                u64 elapsed_ns = (now_ns > start_time_ns) ? (now_ns - start_time_ns) : 0;
 
-                // Cálculo de Memoria % (con 2 decimales: base 10000)
-                if (totalram_kb > 0)
-                    mem_usage = (rss_mb * 10000) / totalram_mb;
-
-                // Cálculo de CPU % (con 2 decimales: base 10000)
-                if (elapsed_ns > 0) {
-                    u64 cpus = num_online_cpus();
-                    cpu_usage = (total_cpu_ns * 10000ULL) / elapsed_ns;
-                    if (cpus > 0)
-                        cpu_usage /= cpus;
-                }
-
-                cmdline = get_process_cmdline(main_child);
-
-                if (!first_process)
-                    seq_printf(m, ",\n");
-                else
-                    first_process = 0;*/
-
-                seq_printf(m, "    {\n");
-                seq_printf(m, "      \"PID\": %d,\n", main_child->pid);
-                seq_printf(m, "      \"Name\": \"%s\",\n", main_child->comm);
-                seq_printf(m, "      \"Cmdline\": \"%s\",\n", cmdline ? cmdline : main_child->comm);
-                seq_printf(m, "      \"vsz\": %lu,\n", vsz_mb);
-                seq_printf(m, "      \"rss\": %lu,\n", rss_mb);
-                seq_printf(m, "      \"Memory_Usage\": %lu.%02lu,\n", mem_usage / 10, mem_usage % 10);
-                seq_printf(m, "      \"CPU_Usage\": %lu.%02lu\n", cpu_usage / 100, cpu_usage % 100);
-                seq_printf(m, "    }");
-
-                if (cmdline)
-                    kfree(cmdline);
-            }
+            seq_printf(m, "     {\n");
+            seq_printf(m, "        \"PID\": %d,\n", task->pid);
+            seq_printf(m, "        \"Name\": \"%s\",\n", task->comm);
+            seq_printf(m, "        \"Cmdline\": \"%s\",\n", cmdline ? cmdline : "N/A");
+            seq_printf(m, "        \"vsz\": %lu,\n", total_vsz);
+            seq_printf(m, "        \"rss\": %lu,\n", total_rss);
+            seq_printf(m, "        \"Memory_Usage\": %lu.%lu,\n", mem_usage / 10, mem_usage % 10);
+            seq_printf(m, "        \"CPU_Usage\": %lu.%lu\n", cpu_usage / 100, cpu_usage % 100);
+            seq_printf(m, "     }");
+            
         }
     }
 
