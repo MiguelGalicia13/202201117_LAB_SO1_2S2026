@@ -63,17 +63,10 @@ func (q *Queue) Dequeue() error {
 		return errors.New("la cola está vacía")
 	}
 	container := q.head.Data
-
 	// Matar el proceso del contenedor
-	err:=killProcess(container.PID, false)
+	err:=killProcess(container.PID)
 	if err !=nil{
-		log.Fatal("[ERROR] CONTAINER COULDNT BE TERMINATED, FORCING IT TO STOP ", err.Error())
-		err = killProcess(container.PID, true)
-		if err !=nil{
-			log.Fatal("[ERROR] CONTAINER COULDNT BE KILLED ", err.Error())
-			return err
-		}
-		
+		return err
 	}
 	log.Println("[LOG] CONTAINER SUCCESFULLY STOPED ")
 	container.Status="stoped"
@@ -109,16 +102,19 @@ func (q *Queue) Peek() (*Container, error) {
 	return &q.head.Data, nil
 }
 
-func killProcess(pid int, force bool)error{
-	sig := syscall.SIGTERM
-	if force{
-		sig = syscall.SIGKILL
-	}
-	err := syscall.Kill(pid, sig)
+func killProcess(pid int)error{
+
+	err := syscall.Kill(pid, syscall.SIGKILL)
 	if err !=nil{
-		log.Fatal("[ERROR] PROCES COULD NOT BE TERMINATED", err.Error())
+		log.Println("[ERROR] PROCES COULD NOT BE TERMINATED", err.Error())
 		return err
 	}
 	log.Println("[LOG] PROCESS SUCCESFULLY TERMINATED ", pid)
 	return nil
+}
+
+func (q *Queue) StopAll() {
+    for q.head != nil {
+        _ = q.Dequeue()                                                                                                                       
+    }
 }
