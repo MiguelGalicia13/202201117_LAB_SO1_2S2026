@@ -67,10 +67,10 @@ func (q *Queue) Dequeue() error {
 	// Matar el proceso del contenedor
 	err:=killProcess(container.PID, false)
 	if err !=nil{
-		log.Fatal("[ERROR] CONTAINER COULDNT BE TERMINATED, FORCING IT TO STOP ", err.Error())
+		log.Println("[ERROR] CONTAINER COULDNT BE TERMINATED, FORCING IT TO STOP ", err.Error())
 		err = killProcess(container.PID, true)
 		if err !=nil{
-			log.Fatal("[ERROR] CONTAINER COULDNT BE KILLED ", err.Error())
+			log.Println("[ERROR] CONTAINER COULDNT BE KILLED ", err.Error())
 			return err
 		}
 		
@@ -116,7 +116,7 @@ func killProcess(pid int, force bool)error{
 	}
 	err := syscall.Kill(pid, sig)
 	if err !=nil{
-		log.Fatal("[ERROR] PROCES COULD NOT BE TERMINATED", err.Error())
+		log.Println("[ERROR] PROCES COULD NOT BE TERMINATED", err.Error())
 		return err
 	}
 	log.Println("[LOG] PROCESS SUCCESFULLY TERMINATED ", pid)

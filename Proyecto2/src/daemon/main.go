@@ -36,7 +36,7 @@ func parseResponse(response string)(Response){
 	var resp Response
 	err := json.Unmarshal([]byte(response), &resp)
 	if err != nil{
-		log.Fatal(err)
+		log.Println(err)
 	}
 	return resp
 }
@@ -74,7 +74,7 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 	cmd := exec.Command("sh", "-c", image.Command)
 	output, err := cmd.Output()
 	if err != nil {
-		log.Fatal("[ERROR] CONTAINTER COULDNT BE CREATED ", err)
+		log.Println("[ERROR] CONTAINTER COULDNT BE CREATED ", err)
 		return
 	}
 	log.Println("[LOG] CONTAINER CREATED", strings.TrimSpace(string(output)))
@@ -83,7 +83,7 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 	cmd = exec.Command("sh", "-c", command)
 	output, err = cmd.Output()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return
 	}
 	resp := parseResponse(string(output))
