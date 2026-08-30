@@ -85,6 +85,7 @@ static int sysinfo_show(struct seq_file *m, void *v) {
     struct sysinfo si;
     struct task_struct *task;
     int first_process = 1;
+    int containter_count =0;
     unsigned long totalram_kb;
     unsigned long freeram_kb;
     u64 now_ns = ktime_get_ns();
@@ -100,12 +101,12 @@ static int sysinfo_show(struct seq_file *m, void *v) {
     seq_printf(m, "  \"Totalram\": %u,\n", totalram_mb);
     seq_printf(m, "  \"Freeram\": %u,\n", freeram_mb);
     seq_printf(m, "  \"Usedram\": %u,\n", usedram_mb);
-    seq_printf(m, "  \"Procs\": %d,\n", si.procs);
     seq_printf(m, "  \"Processes\": [\n");
 
     for_each_process(task) {
         // Identificar el supervisor de containerd
         if (strcmp(task->comm, "containerd-shim") == 0) {
+            containter_count++;
             unsigned long total_vsz = 0;
             unsigned long total_rss = 0;
             char *cmdline = NULL;
@@ -175,8 +176,9 @@ static int sysinfo_show(struct seq_file *m, void *v) {
             
         }
     }
-
-    seq_printf(m, "\n  ]\n}\n");
+    seq_printf(m, "  \n], \n");
+    seq_printf(m, "  \"Procs\": %d\n", containter_count);
+    seq_printf(m, "}\n");
     return 0;
 }
 
