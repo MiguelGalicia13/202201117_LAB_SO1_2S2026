@@ -9,6 +9,9 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"os"
+	"os/signal"
+	"syscall"
 )
 type Image struct{
 	Name string
@@ -43,9 +46,22 @@ func parseResponse(response string)(Response){
 
 var ctx = context.Background();
 
+func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
+        sigChan := make(chan os.Signal, 1)
+        signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+        sig := <-sigChan
+        log.Printf("\n[LOG] STOPPOING NOW: %s. \n", sig)
+        highUsage.StopAll()
+        lowUsage.StopAll()
+        log.Println("[LOG] CONTAINERS HAD BEEN STOPPED")
+        os.Exit(0)
+    }
+
 func main(){
 	var highUsage = queue.NewQueue(2)
 	var lowUsage = queue.NewQueue(3)
+	//capturar crlt + c
+	go handleSignals(highUsage, lowUsage)
 	var images []Image
 	var goClient Image
 	var alpineHigh Image
