@@ -122,3 +122,9 @@ func killProcess(pid int, force bool)error{
 	log.Println("[LOG] PROCESS SUCCESFULLY TERMINATED ", pid)
 	return nil
 }
+
+func (q *Queue) StopAll() {
+    for q.head != nil {
+        _ = q.Dequeue()                                                                                                                       
+    }
+}
