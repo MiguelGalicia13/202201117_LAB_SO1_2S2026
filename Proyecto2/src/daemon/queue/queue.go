@@ -2,8 +2,7 @@ package queue
 
 import (
 	"errors"
-	"os/exec"
-	"strings"
+	"syscall"
 	"log"
 )
 // Node representa un nodo individual en la cola con apuntadores
@@ -20,7 +19,7 @@ type Queue struct {
 }
 
 type Container struct {
-	PID    string
+	PID    int
 	Name   string
 	CMDL   string
 	CPU    float64
@@ -66,19 +65,18 @@ func (q *Queue) Dequeue() error {
 	container := q.head.Data
 
 	// Matar el proceso del contenedor
-	cmd := exec.Command("sh" ,"-c", "docker stop "+container.PID)
-	output, err := cmd.Output()
-	if err != nil {
-		log.Fatal("[ERROR] PROCESS COULDNT BE TERMINATED ", err.Error())
-		return err
-	}
-	cmd = exec.Command("sh", "-c", "docker rm "+container.PID)
-	output, err = cmd.Output()
+	err:=killProcess(container.PID, false)
 	if err !=nil{
-		log.Fatal("[ERROR] CONTAINER COULDNT BE REMOVED ", err.Error())
-		return err
+		log.Fatal("[ERROR] CONTAINER COULDNT BE TERMINATED, FORCING IT TO STOP ", err.Error())
+		err = killProcess(container.PID, true)
+		if err !=nil{
+			log.Fatal("[ERROR] CONTAINER COULDNT BE KILLED ", err.Error())
+			return err
+		}
+		
 	}
-	log.Println("[LOG] CONTAINER SUCCESFULLY STOPED ",strings.TrimSpace(string(output)))
+	log.Println("[LOG] CONTAINER SUCCESFULLY STOPED ")
+	container.Status="stoped"
 
 	q.head = q.head.Next
 	if q.head == nil {
@@ -109,4 +107,18 @@ func (q *Queue) Peek() (*Container, error) {
 		return nil, errors.New("la cola está vacía")
 	}
 	return &q.head.Data, nil
+}
+
+func killProcess(pid int, force bool)error{
+	sig := syscall.SIGTERM
+	if force{
+		sig = syscall.SIGKILL
+	}
+	err := syscall.Kill(pid, sig)
+	if err !=nil{
+		log.Fatal("[ERROR] PROCES COULD NOT BE TERMINATED", err.Error())
+		return err
+	}
+	log.Println("[LOG] PROCESS SUCCESFULLY TERMINATED ", pid)
+	return nil
 }

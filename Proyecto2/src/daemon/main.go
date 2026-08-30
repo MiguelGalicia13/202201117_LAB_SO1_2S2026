@@ -78,7 +78,7 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 		return
 	}
 	log.Println("[LOG] CONTAINER CREATED", strings.TrimSpace(string(output)))
-	containerID := strings.TrimSpace(string(output))
+	//containerID := strings.TrimSpace(string(output))
 	command := "cat /proc/continfo_pr2_so1_202201117"
 	cmd = exec.Command("sh", "-c", command)
 	output, err = cmd.Output()
@@ -89,7 +89,7 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 	resp := parseResponse(string(output))
 	var container queue.Container
 	lastProces := resp.Process[resp.Procs-1]
-	container.PID = containerID
+	container.PID = lastProces.PID
 	container.Name = image.Name
 	container.CMDL = lastProces.CmdLine
 	container.CPU = lastProces.CpuUsage
