@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/rand"
 	"os/exec"
-	"strings"
 	"time"
 	"os"
 	"os/signal"
@@ -94,16 +93,15 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 	n := rand.Intn(len(imgs))
 	image := imgs[n]
 	cmd := exec.Command("sh", "-c", image.Command)
-	output, err := cmd.Output()
+	_, err := cmd.Output()
 	if err != nil {
 		log.Println("[ERROR] CONTAINTER COULDNT BE CREATED ", err)
 		return
 	}
-	log.Println("[LOG] CONTAINER CREATED", strings.TrimSpace(string(output)))
-	//containerID := strings.TrimSpace(string(output))
+	log.Println("[LOG] CONTAINER CREATED")
 	command := "cat /proc/continfo_pr2_so1_202201117"
 	cmd = exec.Command("sh", "-c", command)
-	output, err = cmd.Output()
+	output, err := cmd.Output()
 	if err != nil {
 		log.Println(err)
 		return
