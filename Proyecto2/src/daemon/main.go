@@ -4,13 +4,14 @@ import (
 	"context"
 	"daemon/queue"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
-	"os/exec"
-	"time"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 )
 type Image struct{
 	Name string
@@ -124,3 +125,17 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 	}
 }
 
+func createCronjob(){
+	executable, _ := os.Executable()
+	cronCommand := fmt.Sprintf("*/2 * * * * %s add container", executable)
+
+	out, err := exec.Command("bash", "-c", 
+		fmt.Sprintf(`(crontab -l 2>dev/null; echo "%s" )| crontab -`, cronCommand),
+	).Output()
+	if err != nil{
+		log.Printf("[LOG] ERROR CREATING CRONJOB: %v, OUTPUT: %s \n", err, out)
+	}else{
+		log.Println("[LOG] CRONJOB CREATED SUCCESFULY")
+	}
+	
+}
