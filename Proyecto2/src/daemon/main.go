@@ -43,7 +43,25 @@ func parseResponse(response string)(Response){
 	}
 	return resp
 }
-
+func getImages()([]Image){
+	var images []Image
+	var goClient Image
+	var alpineHigh Image
+	var alpineLow Image
+	goClient.Name = "go-client"
+	goClient.Command = "docker run -d roldyoran/go-client"
+	goClient.highusage = true
+	images = append(images, goClient)
+	alpineHigh.Name = "alpine"
+	alpineHigh.Command = `docker run -d alpine sh -c "while true; do echo '2^20' | bc > /dev/null; sleep 2; done"`
+	alpineHigh.highusage = true
+	images = append(images, alpineHigh)
+	alpineLow.Name = "alpine"
+	alpineLow.Command = "docker run -d alpine sleep 240"
+	alpineLow.highusage = false
+	images = append(images, alpineLow)
+	return images
+}
 var ctx = context.Background();
 
 func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
@@ -68,24 +86,9 @@ func main(){
 	var lowUsage = queue.NewQueue(3)
 	//capturar crlt + c
 	go handleSignals(highUsage, lowUsage)
-	var images []Image
-	var goClient Image
-	var alpineHigh Image
-	var alpineLow Image
-	goClient.Name = "go-client"
-	goClient.Command = "docker run -d roldyoran/go-client"
-	goClient.highusage = true
-	images = append(images, goClient)
-	alpineHigh.Name = "alpine"
-	alpineHigh.Command = `docker run -d alpine sh -c "while true; do echo '2^20' | bc > /dev/null; sleep 2; done"`
-	alpineHigh.highusage = true
-	images = append(images, alpineHigh)
-	alpineLow.Name = "alpine"
-	alpineLow.Command = "docker run -d alpine sleep 240"
-	alpineLow.highusage = false
-	images = append(images, alpineLow)
+	imager :=getImages()
 	for {
-		generateContainer(highUsage, lowUsage, images)
+		generateContainer(highUsage, lowUsage, imager)
 		time.Sleep(2 * time.Second)
 	}
 }
