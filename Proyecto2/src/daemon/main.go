@@ -82,14 +82,28 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
     }
 
 func main(){
+	imager :=getImages()
+	if len(os.Args) > 1 && os.Args[1] == "add-container" {
+		for i:=0;i<5;i++{
+			n := rand.Intn(len(imager))
+			cmd := exec.Command("sh", "-c", imager[n].Command)
+			_, err := cmd.Output()
+			if err != nil {
+				log.Println("[ERROR] CONTAINTER COULDNT BE CREATED ", err)
+				return
+			}
+			log.Println("[LOG] CONTAINER CREATED")
+		}
+		return
+	}
 	var highUsage = queue.NewQueue(2)
 	var lowUsage = queue.NewQueue(3)
 	//capturar crlt + c
 	go handleSignals(highUsage, lowUsage)
-	imager :=getImages()
+
 	for {
 		generateContainer(highUsage, lowUsage, imager)
-		time.Sleep(2 * time.Second)
+		time.Sleep(20 * time.Second)
 	}
 }
 
@@ -130,7 +144,7 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 
 func createCronjob(){
 	executable, _ := os.Executable()
-	cronCommand := fmt.Sprintf("*/2 * * * * %s add container", executable)
+	cronCommand := fmt.Sprintf("*/2 * * * * %s add-container", executable)
 
 	out, err := exec.Command("bash", "-c", 
 		fmt.Sprintf(`(crontab -l 2>dev/null; echo "%s" )| crontab -`, cronCommand),
