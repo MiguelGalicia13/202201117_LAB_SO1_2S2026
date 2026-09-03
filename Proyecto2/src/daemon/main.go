@@ -43,24 +43,25 @@ func parseResponse(response string)(Response){
 	}
 	return resp
 }
-func getImages()([]Image){
-	var images []Image
+func getImages()([]Image , []Image){
+	var highImages []Image
+	var lowImages []Image
 	var goClient Image
 	var alpineHigh Image
 	var alpineLow Image
 	goClient.Name = "go-client"
 	goClient.Command = "docker run -d roldyoran/go-client"
 	goClient.highusage = true
-	images = append(images, goClient)
+	highImages = append(highImages, goClient)
 	alpineHigh.Name = "alpine"
 	alpineHigh.Command = `docker run -d alpine sh -c "while true; do echo '2^20' | bc > /dev/null; sleep 2; done"`
 	alpineHigh.highusage = true
-	images = append(images, alpineHigh)
+	highImages = append(highImages, alpineHigh)
 	alpineLow.Name = "alpine"
 	alpineLow.Command = "docker run -d alpine sleep 240"
 	alpineLow.highusage = false
-	images = append(images, alpineLow)
-	return images
+	lowImages = append(lowImages, alpineLow)
+	return highImages, lowImages
 }
 var ctx = context.Background();
 
@@ -83,17 +84,19 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
     }
 
 func main(){
-	imager :=getImages()
 	if len(os.Args) > 1 && os.Args[1] == "add-container" {
-		for i:=0;i<5;i++{
-			n := rand.Intn(len(imager))
-			cmd := exec.Command("sh", "-c", imager[n].Command)
-			_, err := cmd.Output()
-			if err != nil {
-				log.Println("[ERROR] CONTAINTER COULDNT BE CREATED ", err)
-				return
-			}
-			log.Println("[LOG] CONTAINER CREATED")
+		highImager, lowImager :=getImages()
+		for i:=0;i<2;i++{
+			n := rand.Intn(len(highImager))
+			cmd := exec.Command("sh", "-c", highImager[n].Command)
+			cmd.Run()
+			log.Println("[LOG] HIGH USAGE CONTAINER CREATED")
+		}
+		for i:=0;i<3;i++{
+			n := rand.Intn(len(lowImager))
+			cmd := exec.Command("sh", "-c", lowImager[n].Command)
+			cmd.Run()
+			log.Println("[LOG] LOW USAGE CONTAINER CREATED")
 		}
 		return
 	}
@@ -136,19 +139,6 @@ func main(){
 				}
 			}
 		}
-		//balance containers
-		for highUsage.Size() < highUsage.MaxSize(){
-			log.Println("[DAEMON] HIGH USAGE CONTAINER MISSING. CREATING A NEW ONE")
-			cmd := exec.Command("sh", "-c", "docker run -d roldyoran/go-client")
-			cmd.Run()
-			break
-		}
-		for lowUsage.Size() < lowUsage.MaxSize(){
-			log.Println("[DAEMON] LOW USAGE CONTAINER MISSING. CREATING A NEW ONE")
-			  cmd := exec.Command("sh", "-c", "docker run -d alpine sleep 240")
-	        cmd.Run()
-	        break
-		}
 		log.Printf("[DAEMON] DATA: %d PROCESS DETECTED | RAM USED: %d MB\n", resp.Procs, resp.UsedRAM)
 	}
 }
@@ -169,7 +159,7 @@ func createCronjob(){
 	cronCommand := fmt.Sprintf("*/2 * * * * %s add-container", executable)
     
 	out, err := exec.Command("bash", "-c", 
-		fmt.Sprintf(`(crontab -l 2>/dev/null; echo "%s" )| crontab -`, cronCommand),
+		fmt.Sprintf(`(crontab -l 2>/dev/null | grep -v "add-container"; echo "%s" )| crontab -`, cronCommand),
 	).Output()
 	if err != nil{
 		log.Printf("[LOG] ERROR CREATING CRONJOB: %v, OUTPUT: %s \n", err, out)
@@ -182,10 +172,10 @@ func killCronjob(){
 	cmd := exec.Command("bash", "-c", "crontab -l 2>/dev/null | grep -v 'add-container' | crontab -")
     err := cmd.Run()
     if err != nil {
-        log.Println("[ERROR] No se pudo eliminar el cronjob:", err)                                                                           
+        log.Println("[ERROR] COULDNT REMOVE CRONJOB, PLEASE REMOVE IT BY HAND ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️:", err)                                                                           
         return                                                                                                                                
     }
-    log.Println("[LOG] CRONJOB ELIMINADO EXITOSAMENTE DEL SISTEMA")
+    log.Println("[LOG] CRONJOB STOPPED")
 }
 func isHighUsage(p Process)bool{
 	if p.Name == "client" || p.Name =="sh"{

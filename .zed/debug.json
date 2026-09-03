@@ -1,0 +1,20 @@
+[
+  {
+    "adapter": "Delve",
+    "label": "Debug Daemon (Modo Normal)",
+    "request": "launch",
+    "mode": "debug",
+    "program": ".",
+    "cwd": "${ZED_WORKTREE_ROOT}/Proyecto2/src/daemon",
+    "args": []
+  },
+  {
+    "adapter": "Delve",
+    "label": "Debug Cronjob (add-container)",
+    "request": "launch",
+    "mode": "debug",
+    "program": ".",
+    "cwd": "${ZED_WORKTREE_ROOT}/Proyecto2/src/daemon",
+    "args": ["add-container"]
+  }
+]

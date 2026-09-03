@@ -55,6 +55,7 @@ func (q *Queue) Enqueue(contenedor Container) {
 	}
 	q.tail = newNode
 	q.size++
+	log.Printf("[LOG] CONTAINER ADDED TO QUEUE %d\n", newNode.Data.PID)
 }
 
 // Dequeue retira y termina (kill) el contenedor más antiguo al frente de la cola (head).
