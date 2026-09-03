@@ -100,25 +100,15 @@ func main(){
 	var lowUsage = queue.NewQueue(3)
 	//capturar crlt + c
 	go handleSignals(highUsage, lowUsage)
-
+	createCronjob()
 	for {
-		generateContainer(highUsage, lowUsage, imager)
 		time.Sleep(20 * time.Second)
 	}
-}
-
-func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Image) {
-	n := rand.Intn(len(imgs))
-	image := imgs[n]
-	cmd := exec.Command("sh", "-c", image.Command)
-	_, err := cmd.Output()
-	if err != nil {
-		log.Println("[ERROR] CONTAINTER COULDNT BE CREATED ", err)
-		return
-	}
-	log.Println("[LOG] CONTAINER CREATED")
+    }
+    
+    func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Image) {
 	command := "cat /proc/continfo_pr2_so1_202201117"
-	cmd = exec.Command("sh", "-c", command)
+	cmd := exec.Command("sh", "-c", command)
 	output, err := cmd.Output()
 	if err != nil {
 		log.Println(err)
@@ -128,24 +118,24 @@ func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Ima
 	var container queue.Container
 	lastProces := resp.Process[resp.Procs-1]
 	container.PID = lastProces.PID
-	container.Name = image.Name
+	container.Name = lastProces.Name
 	container.CMDL = lastProces.CmdLine
 	container.CPU = lastProces.CpuUsage
 	container.Memory = lastProces.MemoryUsage
 	container.VSZ = lastProces.Vsz
 	container.RSS = lastProces.Rss
 	container.Status = "running"
-	if image.highusage {
+	/*if image.highusage {
 		queueHigh.Enqueue(container)
 	} else {
 		queueLow.Enqueue(container)
-	}
-}
-
-func createCronjob(){
+	}*/
+    }
+    
+    func createCronjob(){
 	executable, _ := os.Executable()
 	cronCommand := fmt.Sprintf("*/2 * * * * %s add-container", executable)
-
+    
 	out, err := exec.Command("bash", "-c", 
 		fmt.Sprintf(`(crontab -l 2>dev/null; echo "%s" )| crontab -`, cronCommand),
 	).Output()
@@ -154,5 +144,4 @@ func createCronjob(){
 	}else{
 		log.Println("[LOG] CRONJOB CREATED SUCCESFULY")
 	}
-	
 }
