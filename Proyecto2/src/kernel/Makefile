@@ -17,6 +17,7 @@ update:
 	$(MAKE) clean
 	$(MAKE) all
 	$(MAKE) load
+	$(MAKE) clean
 log:
 	sudo dmesg | tail -20
 show:

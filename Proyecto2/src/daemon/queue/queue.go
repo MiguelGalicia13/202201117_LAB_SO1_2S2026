@@ -103,7 +103,6 @@ func (q *Queue) Peek() (*Container, error) {
 }
 
 func killProcess(pid int)error{
-
 	err := syscall.Kill(pid, syscall.SIGKILL)
 	if err !=nil{
 		log.Println("[ERROR] PROCES COULD NOT BE TERMINATED", err.Error())
