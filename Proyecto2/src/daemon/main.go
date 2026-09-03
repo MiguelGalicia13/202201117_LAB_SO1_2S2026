@@ -147,3 +147,12 @@ func killCronjob(){
     }
     log.Println("[LOG] CRONJOB ELIMINADO EXITOSAMENTE DEL SISTEMA")
 }
+func isHighUsage(p Process)bool{
+	if p.Name == "client" || p.Name =="sh"{
+		return true
+	}
+	if p.CpuUsage > 10.0 || p.MemoryUsage > 5.0{
+		return true
+	}
+	return false
+}
