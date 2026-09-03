@@ -74,6 +74,7 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
         highUsage.StopAll()
         lowUsage.StopAll()
         killCronjob()
+        stopKernel()
         cmd := exec.Command("sh", "-c", "docker rm $(docker ps -q -a)")
         out, err:= cmd.Output()
         if err != nil{
@@ -222,5 +223,21 @@ func startModule()error{
 		return err
 	}
 	log.Println("[LOG] KERNEL MODULE UP AND RUNNING")
+	return nil
+}
+
+func stopKernel()error{
+	// The procces doent exist
+	if _, err :=os.Stat("/proc/continfo_pr2_so1_202201117"); err!=nil{
+		log.Println("[LOG] KERNEL MODULE IS NOT UP")
+		return nil
+	}
+	cmd := exec.Command("sh", "-c", "rmmod sysinfo")
+	out, err :=cmd.Output()
+	if err != nil{
+		log.Printf("[ERROR] MODULE COULDNT BE UNLOADED, %s, %s", err.Error(), out)
+		return err
+	}
+	log.Println("[LOG] KERNEL MODULE WAS UNLOADED")
 	return nil
 }
