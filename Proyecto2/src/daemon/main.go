@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"context"
 	"daemon/queue"
 	"encoding/json"
@@ -72,13 +73,13 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
         log.Printf("\n[LOG] STOPPOING NOW: %s. \n", sig)
         highUsage.StopAll()
         lowUsage.StopAll()
+        killCronjob()
         cmd := exec.Command("sh", "-c", "docker rm $(docker ps -q -a)")
-        _, err:= cmd.Output()
+        out, err:= cmd.Output()
         if err != nil{
-        	log.Println("[ERROR] CONTAINERS COULDNT BE STOPPED")
+        	log.Printf("[ERROR] CONTAINERS COULDNT BE STOPPED %s, %s", err.Error(), out)
          	os.Exit(1)
         }
-        killCronjob()
         log.Println("[LOG] CONTAINERS HAD BEEN STOPPED")
         os.Exit(0)
     }
@@ -100,6 +101,7 @@ func main(){
 		}
 		return
 	}
+	startModule()
 	var highUsage = queue.NewQueue(2)
 	var lowUsage = queue.NewQueue(3)
 	//capturar crlt + c
@@ -185,4 +187,40 @@ func isHighUsage(p Process)bool{
 		return true
 	}
 	return false
+}
+func startModule()error{
+	//verify is the modeule up
+	if _, err :=os.Stat("/proc/continfo_pr2_so1_202201117"); err==nil{
+		log.Println("[LOG] KERNEL MODULE IS ALREADY UP")
+		return nil
+	}
+	execPath, _ := os.Executable()
+	kernelPath := filepath.Join(filepath.Dir(execPath),"..","kernel")
+	log.Printf("[LOG] COMPILING FROM: %s \n", kernelPath)
+	cmd := exec.Command("make", "all")
+	cmd.Dir = kernelPath
+	out, err := cmd.Output()
+	if err!=nil{
+		log.Printf("[ERROR] KERNEL COULD NOT BE COMPILED %s ,%d\n",err.Error(),out)
+		return err
+	}
+	log.Println("[LOG] COMPILING COMPLEATED")
+	log.Printf("[LOG] LOADING COMPILING FROM: %s \n", kernelPath)
+	cmd = exec.Command("sh", "-c", "sudo insmod sysinfo.ko")
+	cmd.Dir = kernelPath
+	out, err = cmd.Output()
+	if err!=nil{
+		log.Printf("[ERROR] KERNEL COULD NOT BE LOADED %s, %s\n",err.Error(),out)
+		return err
+	}
+	//clean files created - not neeeded for execution
+	cmd = exec.Command("make", "clean")
+	cmd.Dir = kernelPath
+	_, err = cmd.Output()
+	if err!=nil{
+		log.Printf("[ERROR] KERNEL COULD NOT BE CLEANED %s\n",err.Error())
+		return err
+	}
+	log.Println("[LOG] KERNEL MODULE UP AND RUNNING")
+	return nil
 }
