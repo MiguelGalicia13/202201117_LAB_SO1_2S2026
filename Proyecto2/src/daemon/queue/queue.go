@@ -118,3 +118,14 @@ func (q *Queue) StopAll() {
         _ = q.Dequeue()                                                                                                                       
     }
 }
+
+func (q *Queue) Contains(pid int)bool{
+	current :=q.head
+	for current != nil{
+		if current.Data.PID == pid{
+			return true
+		}
+		current = current.Next
+	}
+	return false
+}
