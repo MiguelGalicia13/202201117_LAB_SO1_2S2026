@@ -109,6 +109,34 @@ func main(){
 			log.Println("[ERROR] COULDNT READ /proc: ",err.Error())
 			continue
 		}
+		for _,p := range resp.Process{
+			//for each of containers
+
+			// skip grafana n Valkey
+			if  p.Name == "grafana" || p.Name=="valkey-server"{
+				continue
+			}
+			container := queue.Container{
+				PID: p.PID,
+				Name: p.Name,
+				CMDL: p.CmdLine,
+				Memory: p.MemoryUsage,
+				VSZ: p.Vsz,
+				RSS: p.Rss,
+				Status: "running",
+			}
+			if isHighUsage(p){
+				if !highUsage.Contains(p.PID){
+					log.Printf("[DAEMON] NEW HIGH USAGE CONTAINER DETECTED (PID: %d)...\n", p.PID)
+					highUsage.Enqueue(container)
+				}
+			}else{
+				if !lowUsage.Contains(p.PID){
+					log.Printf("[DAEMON] NEW LOW USAGE CONTAINER DETECTED (PID: %d)...\n", p.PID)
+					lowUsage.Enqueue(container)
+				}
+			}
+		}
 		log.Printf("[DAEMON] DATA: %d PROCESS DETECTED | RAM USED: %d MB\n", resp.Procs, resp.UsedRAM)
 	}
 }
@@ -129,7 +157,7 @@ func createCronjob(){
 	cronCommand := fmt.Sprintf("*/2 * * * * %s add-container", executable)
     
 	out, err := exec.Command("bash", "-c", 
-		fmt.Sprintf(`(crontab -l 2>dev/null; echo "%s" )| crontab -`, cronCommand),
+		fmt.Sprintf(`(crontab -l 2>/dev/null; echo "%s" )| crontab -`, cronCommand),
 	).Output()
 	if err != nil{
 		log.Printf("[LOG] ERROR CREATING CRONJOB: %v, OUTPUT: %s \n", err, out)
