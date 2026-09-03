@@ -69,6 +69,7 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
         signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
         sig := <-sigChan
         log.Printf("\n[LOG] STOPPOING NOW: %s. \n", sig)
+        killCronjob()
         highUsage.StopAll()
         lowUsage.StopAll()
         cmd := exec.Command("sh", "-c", "docker rm $(docker ps -q -a)")
@@ -111,8 +112,8 @@ func main(){
 		log.Printf("[DAEMON] DATA: %d PROCESS DETECTED | RAM USED: %d MB\n", resp.Procs, resp.UsedRAM)
 	}
 }
-    
-    func readKernelModule()(*Response, error) {
+
+func readKernelModule()(*Response, error) {
 	command := "cat /proc/continfo_pr2_so1_202201117"
 	cmd := exec.Command("sh", "-c", command)
 	output, err := cmd.Output()
@@ -123,7 +124,7 @@ func main(){
 	return &resp, nil
     }
     
-    func createCronjob(){
+func createCronjob(){
 	executable, _ := os.Executable()
 	cronCommand := fmt.Sprintf("*/2 * * * * %s add-container", executable)
     
@@ -135,4 +136,14 @@ func main(){
 	}else{
 		log.Println("[LOG] CRONJOB CREATED SUCCESFULY")
 	}
+}
+
+func killCronjob(){
+	cmd := exec.Command("bash", "-c", "crontab -l 2>/dev/null | grep -v 'add-container' | crontab -")
+    err := cmd.Run()
+    if err != nil {
+        log.Println("[ERROR] No se pudo eliminar el cronjob:", err)                                                                           
+        return                                                                                                                                
+    }
+    log.Println("[LOG] CRONJOB ELIMINADO EXITOSAMENTE DEL SISTEMA")
 }
