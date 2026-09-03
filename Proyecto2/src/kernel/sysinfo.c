@@ -96,7 +96,7 @@ static int sysinfo_show(struct seq_file *m, void *v) {
     freeram_kb = si.freeram << (PAGE_SHIFT -10);
     unsigned int totalram_mb = (si.totalram << (PAGE_SHIFT - 10)) / 1024;
     unsigned int freeram_mb  = (si.freeram << (PAGE_SHIFT - 10)) / 1024;
-    unsigned int usedram_mb =  ((si.totalram << (PAGE_SHIFT - 10)) / 1024)- ((si.freeram << (PAGE_SHIFT - 10)) / 1024);
+    unsigned int usedram_mb  =  ((si.totalram << (PAGE_SHIFT - 10)) / 1024)- ((si.freeram << (PAGE_SHIFT - 10)) / 1024);
     seq_printf(m, "{\n");
     seq_printf(m, "  \"Totalram\": %u,\n", totalram_mb);
     seq_printf(m, "  \"Freeram\": %u,\n", freeram_mb);

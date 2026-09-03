@@ -55,6 +55,7 @@ func (q *Queue) Enqueue(contenedor Container) {
 	}
 	q.tail = newNode
 	q.size++
+	log.Printf("[LOG] CONTAINER ADDED TO QUEUE %d\n", newNode.Data.PID)
 }
 
 // Dequeue retira y termina (kill) el contenedor más antiguo al frente de la cola (head).
@@ -103,7 +104,6 @@ func (q *Queue) Peek() (*Container, error) {
 }
 
 func killProcess(pid int)error{
-
 	err := syscall.Kill(pid, syscall.SIGKILL)
 	if err !=nil{
 		log.Println("[ERROR] PROCES COULD NOT BE TERMINATED", err.Error())
@@ -117,4 +117,15 @@ func (q *Queue) StopAll() {
     for q.head != nil {
         _ = q.Dequeue()                                                                                                                       
     }
+}
+
+func (q *Queue) Contains(pid int)bool{
+	current :=q.head
+	for current != nil{
+		if current.Data.PID == pid{
+			return true
+		}
+		current = current.Next
+	}
+	return false
 }
