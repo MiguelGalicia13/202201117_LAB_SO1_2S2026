@@ -69,7 +69,6 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
         signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
         sig := <-sigChan
         log.Printf("\n[LOG] STOPPOING NOW: %s. \n", sig)
-        killCronjob()
         highUsage.StopAll()
         lowUsage.StopAll()
         cmd := exec.Command("sh", "-c", "docker rm $(docker ps -q -a)")
@@ -78,6 +77,7 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
         	log.Println("[ERROR] CONTAINERS COULDNT BE STOPPED")
          	os.Exit(1)
         }
+        killCronjob()
         log.Println("[LOG] CONTAINERS HAD BEEN STOPPED")
         os.Exit(0)
     }
@@ -111,7 +111,6 @@ func main(){
 		}
 		for _,p := range resp.Process{
 			//for each of containers
-
 			// skip grafana n Valkey
 			if  p.Name == "grafana" || p.Name=="valkey-server"{
 				continue
@@ -136,6 +135,19 @@ func main(){
 					lowUsage.Enqueue(container)
 				}
 			}
+		}
+		//balance containers
+		for highUsage.Size() < highUsage.MaxSize(){
+			log.Println("[DAEMON] HIGH USAGE CONTAINER MISSING. CREATING A NEW ONE")
+			cmd := exec.Command("sh", "-c", "docker run -d roldyoran/go-client")
+			cmd.Run()
+			break
+		}
+		for lowUsage.Size() < lowUsage.MaxSize(){
+			log.Println("[DAEMON] LOW USAGE CONTAINER MISSING. CREATING A NEW ONE")
+			  cmd := exec.Command("sh", "-c", "docker run -d alpine sleep 240")
+	        cmd.Run()
+	        break
 		}
 		log.Printf("[DAEMON] DATA: %d PROCESS DETECTED | RAM USED: %d MB\n", resp.Procs, resp.UsedRAM)
 	}
