@@ -71,12 +71,12 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
         log.Printf("\n[LOG] STOPPOING NOW: %s. \n", sig)
         highUsage.StopAll()
         lowUsage.StopAll()
-        /*cmd := exec.Command("sh", "-c", "docker rm $(docker ps -q -a)")
+        cmd := exec.Command("sh", "-c", "docker rm $(docker ps -q -a)")
         _, err:= cmd.Output()
         if err != nil{
         	log.Println("[ERROR] CONTAINERS COULDNT BE STOPPED")
          	os.Exit(1)
-        }*/
+        }
         killCronjob()
         log.Println("[LOG] CONTAINERS HAD BEEN STOPPED")
         os.Exit(0)
