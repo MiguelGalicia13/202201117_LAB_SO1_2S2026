@@ -103,33 +103,24 @@ func main(){
 	createCronjob()
 	for {
 		time.Sleep(20 * time.Second)
+		resp, err := readKernelModule()
+		if err !=nil{
+			log.Println("[ERROR] COULDNT READ /proc: ",err.Error())
+			continue
+		}
+		log.Printf("[DAEMON] DATA: %d PROCESS DETECTED | RAM USED: %d MB\n", resp.Procs, resp.UsedRAM)
 	}
-    }
+}
     
-    func generateContainer(queueHigh *queue.Queue, queueLow *queue.Queue, imgs []Image) {
+    func readKernelModule()(*Response, error) {
 	command := "cat /proc/continfo_pr2_so1_202201117"
 	cmd := exec.Command("sh", "-c", command)
 	output, err := cmd.Output()
 	if err != nil {
-		log.Println(err)
-		return
+		return nil,err
 	}
 	resp := parseResponse(string(output))
-	var container queue.Container
-	lastProces := resp.Process[resp.Procs-1]
-	container.PID = lastProces.PID
-	container.Name = lastProces.Name
-	container.CMDL = lastProces.CmdLine
-	container.CPU = lastProces.CpuUsage
-	container.Memory = lastProces.MemoryUsage
-	container.VSZ = lastProces.Vsz
-	container.RSS = lastProces.Rss
-	container.Status = "running"
-	/*if image.highusage {
-		queueHigh.Enqueue(container)
-	} else {
-		queueLow.Enqueue(container)
-	}*/
+	return &resp, nil
     }
     
     func createCronjob(){
