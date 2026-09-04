@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"context"
 	"daemon/queue"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"github.com/redis/go-redis/v9"
 )
 type Image struct{
 	Name string
@@ -63,6 +65,11 @@ func getImages()([]Image , []Image){
 	lowImages = append(lowImages, alpineLow)
 	return highImages, lowImages
 }
+var rdb = redis.NewClient(&redis.Options{
+	Addr: "localhost:6379",
+	Password: "",
+	DB: 0,
+})
 var ctx = context.Background();
 
 func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
@@ -72,13 +79,14 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
         log.Printf("\n[LOG] STOPPOING NOW: %s. \n", sig)
         highUsage.StopAll()
         lowUsage.StopAll()
-        cmd := exec.Command("sh", "-c", "docker rm $(docker ps -q -a)")
-        _, err:= cmd.Output()
+        killCronjob()
+        stopKernel()
+        cmd := exec.Command("sh", "-c", "docker container prune")
+        out, err:= cmd.Output()
         if err != nil{
-        	log.Println("[ERROR] CONTAINERS COULDNT BE STOPPED")
+        	log.Printf("[ERROR] CONTAINERS COULDNT BE STOPPED %s, %s", err.Error(), out)
          	os.Exit(1)
         }
-        killCronjob()
         log.Println("[LOG] CONTAINERS HAD BEEN STOPPED")
         os.Exit(0)
     }
@@ -100,6 +108,8 @@ func main(){
 		}
 		return
 	}
+	startModule()
+	startValkeyGrafanaContainer()
 	var highUsage = queue.NewQueue(2)
 	var lowUsage = queue.NewQueue(3)
 	//capturar crlt + c
@@ -140,6 +150,33 @@ func main(){
 			}
 		}
 		log.Printf("[DAEMON] DATA: %d PROCESS DETECTED | RAM USED: %d MB\n", resp.Procs, resp.UsedRAM)
+		rdb.XAdd(ctx, &redis.XAddArgs{
+			Stream: "stream:ram_history",
+			Values: map[string]interface{}{
+				"used_ram": resp.UsedRAM,
+			},
+		})
+		for _, p := range resp.Process {
+			if p.Name == "grafana" || p.Name == "valkey-server" {
+            	continue
+        	}
+	        member := fmt.Sprintf("%d - %s", p.PID, p.Name)
+			
+	        // Ranking de RAM (Score: MemoryUsage)
+	        rdb.ZAdd(ctx, "ranking:ram", redis.Z{
+	            Score:  p.MemoryUsage,
+	            Member: member,
+	        })
+			
+	        // Ranking de CPU (Score: CpuUsage)
+	        rdb.ZAdd(ctx, "ranking:cpu", redis.Z{
+	            Score:  p.CpuUsage,
+	            Member: member,
+	        })
+    	}
+		rdb.Set(ctx, "system:total_ram", resp.Total_RAM,0)
+		rdb.Set(ctx, "system:used_ram", resp.UsedRAM,0)
+		rdb.Set(ctx, "system:free_ram", resp.FreeRAM,0)
 	}
 }
 
@@ -185,4 +222,68 @@ func isHighUsage(p Process)bool{
 		return true
 	}
 	return false
+}
+func startModule()error{
+	//verify is the modeule up
+	if _, err :=os.Stat("/proc/continfo_pr2_so1_202201117"); err==nil{
+		log.Println("[LOG] KERNEL MODULE IS ALREADY UP")
+		return nil
+	}
+	execPath, _ := os.Executable()
+	kernelPath := filepath.Join(filepath.Dir(execPath),"..","kernel")
+	log.Printf("[LOG] COMPILING FROM: %s \n", kernelPath)
+	cmd := exec.Command("make", "all")
+	cmd.Dir = kernelPath
+	out, err := cmd.Output()
+	if err!=nil{
+		log.Printf("[ERROR] KERNEL COULD NOT BE COMPILED %s ,%d\n",err.Error(),out)
+		return err
+	}
+	log.Println("[LOG] COMPILING COMPLEATED")
+	log.Printf("[LOG] LOADING COMPILING FROM: %s \n", kernelPath)
+	cmd = exec.Command("sh", "-c", "sudo insmod sysinfo.ko")
+	cmd.Dir = kernelPath
+	out, err = cmd.Output()
+	if err!=nil{
+		log.Printf("[ERROR] KERNEL COULD NOT BE LOADED %s, %s\n",err.Error(),out)
+		return err
+	}
+	//clean files created - not neeeded for execution
+	cmd = exec.Command("make", "clean")
+	cmd.Dir = kernelPath
+	_, err = cmd.Output()
+	if err!=nil{
+		log.Printf("[ERROR] KERNEL COULD NOT BE CLEANED %s\n",err.Error())
+		return err
+	}
+	log.Println("[LOG] KERNEL MODULE UP AND RUNNING")
+	return nil
+}
+
+func stopKernel()error{
+	// The procces doent exist
+	if _, err :=os.Stat("/proc/continfo_pr2_so1_202201117"); err!=nil{
+		log.Println("[LOG] KERNEL MODULE IS NOT UP")
+		return nil
+	}
+	cmd := exec.Command("sh", "-c", "rmmod sysinfo")
+	out, err :=cmd.Output()
+	if err != nil{
+		log.Printf("[ERROR] MODULE COULDNT BE UNLOADED, %s, %s", err.Error(), out)
+		return err
+	}
+	log.Println("[LOG] KERNEL MODULE WAS UNLOADED")
+	return nil
+}
+
+func startValkeyGrafanaContainer()error{
+	cmd := exec.Command("sh", "-c", "docker compose up -d")
+	log.Println("[LOG] STARTING CONTAINTER FOR VALKEY AND GRAFANA")
+	out, err :=cmd.Output()
+	if err !=nil{
+		log.Printf("[ERROR] CONTAINER COULD NOT BE STARTED %s %s", err.Error(), out)
+		return err
+	}
+	log.Println("[LOG] CONTAINER IS NOW UP")
+	return nil
 }

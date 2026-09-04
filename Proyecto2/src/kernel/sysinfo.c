@@ -132,8 +132,8 @@ static int sysinfo_show(struct seq_file *m, void *v) {
             }
 
             if (target_task->mm) {
-                total_vsz = (target_task->mm->total_vm << (PAGE_SHIFT - 10)) / 1024;
-                total_rss = (get_mm_rss(target_task->mm) << (PAGE_SHIFT - 10)) / 1024;
+                total_vsz = (target_task->mm->total_vm << (PAGE_SHIFT - 10));
+                total_rss = (get_mm_rss(target_task->mm) << (PAGE_SHIFT - 10));
                 if (totalram_mb > 0) {
                     mem_usage = (total_rss * 1000) / totalram_mb;
                 }
