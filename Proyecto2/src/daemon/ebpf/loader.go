@@ -15,9 +15,9 @@ import (
 )
 
 type KillEvent struct{
-	PidEmisor int
-	PidReciever int
-	Sig int
+	PidEmisor uint32
+	PidReciever int32
+	Sig int32
 }
 
 type Manager struct{
@@ -35,12 +35,12 @@ func StartKillTrack(objectpath string, onKillConfirmed func(KillEvent))(*Manager
 	}
 	spec, err := cilium.LoadCollectionSpec(objectpath)
 	if err != nil{
-		log.Printf("[ERROR] ERROR WHILE LOADING SPEC eBPF: %w\n",err)
+		log.Printf("[ERROR] ERROR WHILE LOADING SPEC eBPF: %v\n",err)
 		return nil,err
 	}
 	coll, err := cilium.NewCollection(spec)
 	if err != nil{
-		log.Printf("[ERROR] ERROR WHILE CREATING COLLECTION FOR eBPF: %w\n",err)
+		log.Printf("[ERROR] ERROR WHILE CREATING COLLECTION FOR eBPF: %v\n",err)
 		return nil, err
 	}
 	prog := coll.Programs["detect_kill"]
@@ -52,7 +52,7 @@ func StartKillTrack(objectpath string, onKillConfirmed func(KillEvent))(*Manager
 	tp, err := link.Tracepoint("syscalls", "sys_enter_kill", prog,nil)
 	if err != nil{
 		coll.Close()
-		log.Printf("[ERROR] ERROR ADJUSTING TRACEPOINT: %w",err)
+		log.Printf("[ERROR] ERROR ADJUSTING TRACEPOINT: %v",err)
 		return nil, err
 	}
 	events := coll.Maps["events"]
@@ -60,7 +60,7 @@ func StartKillTrack(objectpath string, onKillConfirmed func(KillEvent))(*Manager
 	if err !=nil{
 		tp.Close()
 		rd.Close()
-		log.Printf("[ERROR] ERROR WHILE OPENING RINBUG: %w",err)
+		log.Printf("[ERROR] ERROR WHILE OPENING RINBUG: %v",err)
 		return nil, err
 	}
 	pm := &Manager{
