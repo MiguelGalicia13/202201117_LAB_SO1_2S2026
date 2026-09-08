@@ -314,7 +314,15 @@ func startEBPF()(*ebpf.Manager,error){
 	log.Println("[LOG] COMPILING COMPLEATED")
 	traker,err := ebpf.StartKillTrack(objPath, func(ev ebpf.KillEvent){
 		log.Printf("[eBPF] TERMINATIN CONFIRMED: PID %d KILLED WITH SIGNAL %d by PID %d \n", ev.PidReciever, ev.Sig, ev.PidEmisor)
-
+		rdb.Incr(ctx, "ebpf:total_events")
+		rdb.Incr(ctx, "system:total_containers_deleted")
+		rdb.XAdd(ctx, &redis.XAddArgs{
+			Stream: "stream:deleted_containers",
+			Values: map[string]interface{}{
+				"pid": ev.PidReciever,
+				"signal": ev.Sig,
+			},
+		})
 	})
 	if err !=nil{
 		log.Printf("[ERROR] COULD NOT START eBPF TRACKER: %v \n",err)
