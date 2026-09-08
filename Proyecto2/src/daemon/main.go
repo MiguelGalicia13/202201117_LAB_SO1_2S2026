@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"context"
 	"daemon/queue"
+	"daemon/ebpf"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -72,14 +73,19 @@ var rdb = redis.NewClient(&redis.Options{
 })
 var ctx = context.Background();
 
-func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue) {
+func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue, manager *ebpf.Manager) {
         sigChan := make(chan os.Signal, 1)
         signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
         sig := <-sigChan
         log.Printf("\n[LOG] STOPPOING NOW: %s. \n", sig)
+        if manager !=nil{
+        	manager.Close()
+         	log.Println("[LOG] eBPF CLOSED")
+        }
         highUsage.StopAll()
         lowUsage.StopAll()
         killCronjob()
+        
         stopKernel()
         cmd := exec.Command("sh", "-c", "docker container prune")
         out, err:= cmd.Output()
@@ -109,12 +115,17 @@ func main(){
 		return
 	}
 	startModule()
+	traker,err := startEBPF()
+	if err!=nil{
+		log.Println("[WARN] eBPF COULD NOT BE STARTED: ",err)
+	}
 	startValkeyGrafanaContainer()
 	var highUsage = queue.NewQueue(2)
 	var lowUsage = queue.NewQueue(3)
 	//capturar crlt + c
-	go handleSignals(highUsage, lowUsage)
+	go handleSignals(highUsage, lowUsage, traker)
 	createCronjob()
+	
 	for {
 		time.Sleep(20 * time.Second)
 		resp, err := readKernelModule()
@@ -286,4 +297,29 @@ func startValkeyGrafanaContainer()error{
 	}
 	log.Println("[LOG] CONTAINER IS NOW UP")
 	return nil
+}
+
+func startEBPF()(*ebpf.Manager,error){
+	execPath, _ := os.Executable()
+	ebpfPath := filepath.Join(filepath.Dir(execPath),"..","ebpf")
+	objPath := filepath.Join(ebpfPath, "bpf_kill.o")
+	log.Printf("[LOG] COMPILING FROM: %s \n", ebpfPath)
+	cmd := exec.Command("make", "all")
+	cmd.Dir = ebpfPath
+	out, err := cmd.Output()
+	if err!=nil{
+		log.Printf("[ERROR] eBPF COULD NOT BE COMPILED %s ,%d\n",err.Error(),out)
+		return nil,err
+	}
+	log.Println("[LOG] COMPILING COMPLEATED")
+	traker,err := ebpf.StartKillTrack(objPath, func(ev ebpf.KillEvent){
+		log.Printf("[eBPF] TERMINATIN CONFIRMED: PID %d KILLED WITH SIGNAL %d by PID %d \n", ev.PidReciever, ev.Sig, ev.PidEmisor)
+
+	})
+	if err !=nil{
+		log.Printf("[ERROR] COULD NOT START eBPF TRACKER: %v \n",err)
+		return nil,err
+	}
+	log.Println("[LOG] eBPF RUNNING")
+	return traker,nil
 }
