@@ -7,7 +7,7 @@ services:
     volumes:
       - ./valkey-data:/data
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:latest
     container_name: grafana-valkey
     ports:
       - "3001:3000"
