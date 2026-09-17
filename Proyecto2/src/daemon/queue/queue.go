@@ -67,6 +67,8 @@ func (q *Queue) Dequeue() error {
 	// Matar el proceso del contenedor
 	err:=killProcess(container.PID)
 	if err !=nil{
+		q.head=q.head.Next
+		q.size --
 		return err
 	}
 	log.Println("[LOG] CONTAINER SUCCESFULLY STOPED ")
