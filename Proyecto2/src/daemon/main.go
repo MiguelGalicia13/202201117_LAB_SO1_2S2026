@@ -87,7 +87,7 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue, manager *ebpf.
         killCronjob()
         
         stopKernel()
-        cmd := exec.Command("sh", "-c", "docker container prune")
+        cmd := exec.Command("sh", "-c", "docker container prune -f")
         out, err:= cmd.Output()
         if err != nil{
         	log.Printf("[ERROR] CONTAINERS COULDNT BE STOPPED %s, %s", err.Error(), out)
