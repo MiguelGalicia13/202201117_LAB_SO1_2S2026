@@ -138,6 +138,15 @@ func main(){
 			log.Println("[ERROR] COULDNT READ /proc: ",err.Error())
 			continue
 		}
+
+		// Sincronizar colas purgando procesos que murieron fuera del daemon
+		activePIDs := make(map[int]bool)
+		for _, p := range resp.Process {
+			activePIDs[p.PID] = true
+		}
+		highUsage.PurgeInactive(activePIDs)
+		lowUsage.PurgeInactive(activePIDs)
+
 		for _,p := range resp.Process{
 			//for each of containers
 			// skip grafana n Valkey
