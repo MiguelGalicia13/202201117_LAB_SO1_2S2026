@@ -18,6 +18,9 @@
 #include <linux/binfmts.h>
 #include <linux/timekeeping.h>
 //#include <time.h>
+#include <linux/list.h>
+#include <linux/mutex.h>
+#include <linux/sched/cputime.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Miguel Galicia");
@@ -26,6 +29,21 @@ MODULE_VERSION("1.1");
 
 #define PROC_NAME "continfo_pr2_so1_202201117"
 #define MAX_CMDLINE_LENGTH 256
+
+#define CPU_SAMPLE_RETENTION (2 * 60 * HZ)
+
+struct cpu_sample {
+    pid_t pid;
+    u64 start_time;
+    u64 cpu_time_ns;
+    u64 wall_time_ns;
+    unsigned long last_seen;
+    struct list_head node;
+};
+
+static LIST_HEAD(cpu_samples);
+static DEFINE_MUTEX(cpu_samples_lock);
+
 
 // Obtiene la línea de comandos de un proceso y sanitiza comillas para JSON
 static char *get_process_cmdline(struct task_struct *task) {
@@ -80,6 +98,78 @@ static char *get_process_cmdline(struct task_struct *task) {
     return cmdline;
 }
 
+// Obtiene el tiempo del procesador
+static u64 get_process_cpu_time_ns(struct task_struct *task)
+{
+    u64 user_time;
+    u64 system_time;
+
+    task_cputime_adjusted(task, &user_time, &system_time);
+
+    return user_time + system_time;
+}
+
+//Obiene el uso del procesador
+static u64 get_process_cpu_usage(struct task_struct *task, u64 now_ns)
+  {
+      struct cpu_sample *sample;
+      u64 current_cpu_time;
+      u64 current_start_time;
+      u64 cpu_delta;
+      u64 wall_delta;
+      u64 usage_hundredths = 0;
+
+      current_cpu_time = get_process_cpu_time_ns(task);
+      current_start_time = READ_ONCE(task->start_time);
+
+      mutex_lock(&cpu_samples_lock);
+
+      list_for_each_entry(sample, &cpu_samples, node) {
+          if (sample->pid == task->pid &&
+              sample->start_time == current_start_time) {
+
+              cpu_delta = 0;
+
+              if (current_cpu_time >= sample->cpu_time_ns)
+                  cpu_delta = current_cpu_time -
+                              sample->cpu_time_ns;
+
+              wall_delta = now_ns -
+                           sample->wall_time_ns;
+
+              if (wall_delta > 0) {
+                  usage_hundredths =
+                      div64_u64(cpu_delta * 10000,
+                                wall_delta);
+              }
+
+              sample->cpu_time_ns = current_cpu_time;
+              sample->wall_time_ns = now_ns;
+              sample->last_seen = jiffies;
+
+              mutex_unlock(&cpu_samples_lock);
+              return usage_hundredths;
+          }
+      }
+
+      sample = kmalloc(sizeof(*sample), GFP_KERNEL);
+
+      if (sample) {
+          sample->pid = task->pid;
+          sample->start_time = current_start_time;
+          sample->cpu_time_ns = current_cpu_time;
+          sample->wall_time_ns = now_ns;
+          sample->last_seen = jiffies;
+
+          list_add(&sample->node, &cpu_samples);
+      }
+
+      mutex_unlock(&cpu_samples_lock);
+
+      return 0;
+  }
+
+
 // Función para mostrar la información en /proc en formato JSON
 static int sysinfo_show(struct seq_file *m, void *v) {
     struct sysinfo si;
@@ -89,7 +179,6 @@ static int sysinfo_show(struct seq_file *m, void *v) {
     unsigned long totalram_kb;
     unsigned long freeram_kb;
     u64 now_ns = ktime_get_ns();
-    unsigned long total_jiffies = jiffies;
 
     si_meminfo(&si);
     totalram_kb = si.totalram << (PAGE_SHIFT - 10);
@@ -134,19 +223,12 @@ static int sysinfo_show(struct seq_file *m, void *v) {
             if (target_task->mm) {
                 total_vsz = (target_task->mm->total_vm << (PAGE_SHIFT - 10));
                 total_rss = (get_mm_rss(target_task->mm) << (PAGE_SHIFT - 10));
-                if (totalram_mb > 0) {
-                    mem_usage = (total_rss * 1000) / totalram_mb;
+                if (totalram_kb > 0) {
+                    mem_usage = (total_rss * 1000) / totalram_kb;
                 }
             }
 
-            unsigned long total_time = target_task->utime + target_task->stime;
-            unsigned int cpus = num_online_cpus();
-            if (cpus == 0) cpus = 1;
-
-            if (total_jiffies > 0) {
-                cpu_usage = (total_time * 10000) / total_jiffies;
-                cpu_usage = cpu_usage / cpus;
-            }
+            cpu_usage = get_process_cpu_usage(target_task, now_ns);
 
             cmdline = get_process_cmdline(target_task);
             if (!cmdline && target_task != task) {

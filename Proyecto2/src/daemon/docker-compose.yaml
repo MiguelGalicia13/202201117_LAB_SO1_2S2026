@@ -18,7 +18,7 @@ services:
       - ./provisioning:/etc/grafana/provisioning
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=12345
       # Instala el plugin al iniciar el contenedor, dentro del volumen persistente
       - GF_INSTALL_PLUGINS=redis-datasource
     depends_on:

@@ -87,7 +87,7 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue, manager *ebpf.
         killCronjob()
         
         stopKernel()
-        cmd := exec.Command("sh", "-c", "docker container prune")
+        cmd := exec.Command("sh", "-c", "docker container prune -f")
         out, err:= cmd.Output()
         if err != nil{
         	log.Printf("[ERROR] CONTAINERS COULDNT BE STOPPED %s, %s", err.Error(), out)
@@ -97,21 +97,24 @@ func handleSignals(highUsage *queue.Queue, lowUsage *queue.Queue, manager *ebpf.
         os.Exit(0)
     }
 
+func generateContainers(){
+	highImager, lowImager :=getImages()
+	for i:=0;i<2;i++{
+		n := rand.Intn(len(highImager))
+		cmd := exec.Command("sh", "-c", highImager[n].Command)
+		cmd.Run()
+		log.Println("[LOG] HIGH USAGE CONTAINER CREATED")
+	}
+	for i:=0;i<3;i++{
+		n := rand.Intn(len(lowImager))
+		cmd := exec.Command("sh", "-c", lowImager[n].Command)
+		cmd.Run()
+		log.Println("[LOG] LOW USAGE CONTAINER CREATED")
+	}
+}
 func main(){
 	if len(os.Args) > 1 && os.Args[1] == "add-container" {
-		highImager, lowImager :=getImages()
-		for i:=0;i<2;i++{
-			n := rand.Intn(len(highImager))
-			cmd := exec.Command("sh", "-c", highImager[n].Command)
-			cmd.Run()
-			log.Println("[LOG] HIGH USAGE CONTAINER CREATED")
-		}
-		for i:=0;i<3;i++{
-			n := rand.Intn(len(lowImager))
-			cmd := exec.Command("sh", "-c", lowImager[n].Command)
-			cmd.Run()
-			log.Println("[LOG] LOW USAGE CONTAINER CREATED")
-		}
+		generateContainers()
 		return
 	}
 	startModule()
@@ -125,6 +128,8 @@ func main(){
 	//capturar crlt + c
 	go handleSignals(highUsage, lowUsage, traker)
 	createCronjob()
+	log.Println("[LOG] GENERATING CONTAINERS")
+	generateContainers()
 	
 	for {
 		time.Sleep(20 * time.Second)
@@ -133,6 +138,15 @@ func main(){
 			log.Println("[ERROR] COULDNT READ /proc: ",err.Error())
 			continue
 		}
+
+		// Sincronizar colas purgando procesos que murieron fuera del daemon
+		activePIDs := make(map[int]bool)
+		for _, p := range resp.Process {
+			activePIDs[p.PID] = true
+		}
+		highUsage.PurgeInactive(activePIDs)
+		lowUsage.PurgeInactive(activePIDs)
+
 		for _,p := range resp.Process{
 			//for each of containers
 			// skip grafana n Valkey

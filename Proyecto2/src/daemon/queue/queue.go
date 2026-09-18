@@ -64,20 +64,50 @@ func (q *Queue) Dequeue() error {
 		return errors.New("la cola está vacía")
 	}
 	container := q.head.Data
-	// Matar el proceso del contenedor
-	err:=killProcess(container.PID)
-	if err !=nil{
-		return err
-	}
-	log.Println("[LOG] CONTAINER SUCCESFULLY STOPED ")
-	container.Status="stoped"
 
 	q.head = q.head.Next
 	if q.head == nil {
 		q.tail = nil
 	}
 	q.size--
-	return err
+
+	// Matar el proceso del contenedor
+	err := killProcess(container.PID)
+	if err != nil {
+		return err
+	}
+	log.Println("[LOG] CONTAINER SUCCESFULLY STOPED ")
+	container.Status = "stoped"
+
+	return nil
+}
+
+// PurgeInactive elimina de la cola cualquier proceso que ya no figure en el mapa de procesos vivos del kernel
+func (q *Queue) PurgeInactive(activePIDs map[int]bool) {
+	// 1. Limpiar nodos inactivos que estén al inicio (head)
+	for q.head != nil && !activePIDs[q.head.Data.PID] {
+		log.Printf("[QUEUE] CONTAINER PID %d TERMINATED EXTERNALLY, PURGED FROM QUEUE\n", q.head.Data.PID)
+		q.head = q.head.Next
+		q.size--
+	}
+
+	if q.head == nil {
+		q.tail = nil
+		return
+	}
+
+	// 2. Limpiar nodos inactivos en el medio o final
+	current := q.head
+	for current.Next != nil {
+		if !activePIDs[current.Next.Data.PID] {
+			log.Printf("[QUEUE] CONTAINER PID %d TERMINATED EXTERNALLY, PURGED FROM QUEUE\n", current.Next.Data.PID)
+			current.Next = current.Next.Next
+			q.size--
+		} else {
+			current = current.Next
+		}
+	}
+	q.tail = current
 }
 
 // Size retorna el tamaño actual de la cola.
