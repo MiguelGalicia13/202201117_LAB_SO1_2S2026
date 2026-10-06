@@ -1,7 +1,8 @@
 use actix_web::{App, HttpResponse, HttpServer, web};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use reqwest::Client;
+use std::{env, time::Duration};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct WarReport {
@@ -22,6 +23,13 @@ impl WarReport {
     }
 }
 
+#[derive(Serialize)]
+struct ApiResponse {
+    status: String,
+    message: String,
+}
+
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| App::new().route("/health", web::get().to(health_check)))
@@ -30,10 +38,11 @@ async fn main() -> std::io::Result<()> {
         .await
 }
 async fn health_check() -> HttpResponse {
-    HttpResponse::Ok().json(serde_json::json!({
-        "status": "ok",
-        "message": "API Rust operational"
-    }))
+    HttpResponse::Ok().json(
+        ApiResponse {
+            status: "ok".into(),
+            message: "API Rust operational".into(),
+        })
 }
 
 #[cfg(test)]
