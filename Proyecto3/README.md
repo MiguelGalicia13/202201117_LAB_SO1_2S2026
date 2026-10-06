@@ -144,6 +144,28 @@ sudo certbot --nginx -d 34.44.185.177.sslip.io --non-interactive --agree-tos -m 
 
 Certbot valida el dominio, obtiene un certificado de Let's Encrypt y modifica la configuración de Nginx para habilitar HTTPS. Las opciones `--non-interactive` y `--agree-tos` permiten ejecutarlo sin preguntas, y `-m` registra el correo para avisos importantes y de renovación. Para que la validación funcione, el dominio debe apuntar a la IP pública de la VM y el tráfico entrante por los puertos 80 y 443 debe estar permitido.
 
+## Creación del servidor web en Rust
+
+Para la creación del servidor web en Rust se realizaron los siguientes pasos utilizando Cargo:
+
+1. **Inicializar el proyecto con Cargo**:
+   Se inicializó el proyecto con el siguiente comando:
+   ```bash
+   cargo new api-rust
+   ```
+   *(o ejecutando `cargo init` dentro del directorio correspondiente)* y luego se ingresó a la carpeta:
+   ```bash
+   cd api-rust
+   ```
+
+2. **Añadir Actix Web con cargo add**:
+   Se agregó la dependencia del framework web `actix-web` ejecutando:
+   ```bash
+   cargo add actix-web
+   ```
+
+Con esto, `actix-web` queda registrado en el archivo `Cargo.toml` y disponible para implementar el servidor web en `src/main.rs`.
+
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
