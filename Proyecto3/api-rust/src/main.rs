@@ -8,7 +8,7 @@ struct WarReport {
     country: String,
     warplanes_in_air: i32,
     warships_in_water: i32,
-    time_stamp: String,
+    timestamp: String,
 }
 
 impl WarReport {
@@ -17,15 +17,15 @@ impl WarReport {
         matches!(self.country.as_str(), "USA" | "RUS" | "CHN" | "ESP" | "GTM")
             && self.warplanes_in_air >= 0
             && self.warships_in_water >= 0
-            && (self.time_stamp.ends_with('Z') || self.time_stamp.ends_with("+00:00"))
-            && OffsetDateTime::parse(&self.time_stamp, &Rfc3339).is_ok()
+            && (self.timestamp.ends_with('Z') || self.timestamp.ends_with("+00:00"))
+            && OffsetDateTime::parse(&self.timestamp, &Rfc3339).is_ok()
     }
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| App::new().route("/HEALTH", web::get().to(health_check)))
-        .bind(("127.0.0.1", 8080))?
+    HttpServer::new(|| App::new().route("/health", web::get().to(health_check)))
+        .bind(("0.0.0.0", 8080))?
         .run()
         .await
 }
@@ -44,7 +44,7 @@ mod tests {
             country: "ESP".into(),
             warplanes_in_air: 0,
             warships_in_water: 0,
-            time_stamp: "2026-10-06T20:15:30Z".into(),
+            timestamp: "2026-10-06T20:15:30Z".into(),
         }
     }
     #[test]
@@ -53,8 +53,13 @@ mod tests {
         let mut report = sample();
         report.country = "INVALID".into();
         assert!(!report.is_valid());
+
         let mut report = sample();
-        report.time_stamp = "ayer".into();
+        report.warplanes_in_air = -1;
+        assert!(!report.is_valid());
+
+        let mut report = sample();
+        report.timestamp = "ayer".into();
         assert!(!report.is_valid());
     }
 }
