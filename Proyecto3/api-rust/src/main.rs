@@ -1,8 +1,8 @@
 use actix_web::{App, HttpResponse, HttpServer, web};
-use serde::{Deserialize, Serialize};
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::{env, time::Duration};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct WarReport {
@@ -29,22 +29,76 @@ struct ApiResponse {
     message: String,
 }
 
-
+// Web server
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| App::new().route("/health", web::get().to(health_check)))
-        .bind(("0.0.0.0", 8080))?
-        .run()
-        .await
-}
-async fn health_check() -> HttpResponse {
-    HttpResponse::Ok().json(
-        ApiResponse {
-            status: "ok".into(),
-            message: "API Rust operational".into(),
-        })
+    let go_service_url = env::var("GO_SERVICE_URL").expect("GO_SERVICE_URL not set");
+
+    let client = web::Data::new(
+        Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap(),
+    );
+    let go_service_url = web::Data::new(go_service_url);
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(client.clone())
+            .app_data(go_service_url.clone())
+            .route("/health", web::get().to(health_check))
+            .route("/grpc-202201117", web::post().to(ingres_report))
+    })
+    .bind(("0.0.0.0", 8080))?
+    .run()
+    .await
 }
 
+// ================================================Endpoints==========================================
+async fn health_check() -> HttpResponse {
+    HttpResponse::Ok().json(ApiResponse {
+        status: "ok".into(),
+        message: "API Rust operational".into(),
+    })
+}
+
+async fn ingres_report(
+    client: web::Data<Client>,
+    go_service_url: web::Data<String>,
+    payload: web::Json<WarReport>,
+) -> HttpResponse {
+    let report = payload.into_inner();
+    if !report.is_valid() {
+        return HttpResponse::BadRequest().json(ApiResponse {
+            status: "error".into(),
+            message: "Invalid report".into(),
+        });
+    }
+    match client
+        .post(go_service_url.get_ref().as_str())
+        .json(&report)
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => HttpResponse::Ok().json(ApiResponse {
+            status: "success".into(),
+            message: "Report processed and forwarded to Go".into(),
+        }),
+        Ok(response) => {
+            eprintln!("Go service returned status: {}", response.status());
+            HttpResponse::BadGateway().json(ApiResponse {
+                status: "error".into(),
+                message: "Go service returned error".into(),
+            })
+        }
+        Err(e) => HttpResponse::ServiceUnavailable().json(ApiResponse {
+            status: "error".into(),
+            message: format!("Failed to ingest report: {}",e.to_string()),
+        }),
+    }
+}
+
+// Tests
 #[cfg(test)]
 mod tests {
     use super::WarReport;
