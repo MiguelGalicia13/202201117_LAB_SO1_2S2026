@@ -166,6 +166,43 @@ Para la creación del servidor web en Rust se realizaron los siguientes pasos ut
 
 Con esto, `actix-web` queda registrado en el archivo `Cargo.toml` y disponible para implementar el servidor web en `src/main.rs`.
 
+### Configuración y funcionamiento de la API
+
+La API escucha en `0.0.0.0:8080` y cuenta con los siguientes endpoints:
+
+- `GET /health`: comprueba que la API está operativa y responde un JSON con el estado y un mensaje.
+- `POST /grpc-202201117`: recibe un reporte en JSON, lo valida y, si es válido, lo reenvía al servicio Go.
+
+El cuerpo esperado para `POST /grpc-202201117` tiene esta estructura:
+
+```json
+{
+  "country": "ESP",
+  "warplanes_in_air": 0,
+  "warships_in_water": 0,
+  "timestamp": "2026-10-06T20:15:30Z"
+}
+```
+
+La validación comprueba que `country` sea uno de `USA`, `RUS`, `CHN`, `ESP` o `GTM`; que las cantidades de aviones y barcos sean enteros no negativos; y que `timestamp` sea una fecha RFC 3339 en UTC, terminada en `Z` o `+00:00`. Si el reporte no es válido, responde `400 Bad Request`.
+
+La URL del servicio Go receptor se configura mediante la variable de entorno `GO_SERVICE_URL`. Como la API se ejecutará dentro de Kubernetes, define esta variable en el contenedor de su `Deployment`, apuntando al `Service` interno del servicio Go. Por ejemplo, si ambos servicios están en el mismo namespace:
+
+```yaml
+spec:
+  template:
+    spec:
+      containers:
+        - name: api-rust
+          env:
+            - name: GO_SERVICE_URL
+              value: "http://<nombre-del-service-go>:<puerto>/<ruta>"
+```
+
+Sustituye los valores entre `< >` por el nombre del `Service` de Go, el puerto que expone y la ruta del endpoint receptor. Si los servicios están en namespaces distintos, usa el DNS completo del servicio: `http://<service-go>.<namespace>.svc.cluster.local:<puerto>/<ruta>`. Kubernetes inyectará la variable al iniciar el pod; no es necesario ejecutar `export` manualmente. La API usa un cliente HTTP de `reqwest` con un tiempo límite de cinco segundos para enviar el reporte. Si el servicio Go responde con éxito, la API responde `200 OK`; si devuelve un estado de error, responde `502 Bad Gateway`. Si falla la solicitud HTTP, la API responde `400` con el detalle del error.
+
+El cliente HTTP y la URL se comparten con los handlers mediante `web::Data`. Además de `actix-web`, el proyecto utiliza `reqwest` para enviar solicitudes, `serde` para serializar y deserializar JSON, y `time` para validar las fechas.
+
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
