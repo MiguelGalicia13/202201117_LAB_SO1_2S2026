@@ -206,16 +206,14 @@ static int sysinfo_show(struct seq_file *m, void *v) {
             struct task_struct *child;
             struct task_struct *target_task = task;
 
-            strncpy(target_name, task->comm, sizeof(target_name));
-            target_name[sizeof(target_name) - 1] = '\0';
+            strscpy(target_name, task->comm, sizeof(target_name));
 
             // Buscar si tiene proceso hijo (el proceso dentro del contenedor)
             list_for_each_entry(child, &task->children, sibling) {
                 if (child->mm) {
                     target_task = child;
                     target_pid = child->pid;
-                    strncpy(target_name, child->comm, sizeof(target_name));
-                    target_name[sizeof(target_name) - 1] = '\0';
+                    strscpy(target_name, child->comm, sizeof(target_name));
                     break;
                 }
             }
