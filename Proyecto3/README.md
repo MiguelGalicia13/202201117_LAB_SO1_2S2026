@@ -203,7 +203,29 @@ Sustituye los valores entre `< >` por el nombre del `Service` de Go, el puerto q
 
 El cliente HTTP y la URL se comparten con los handlers mediante `web::Data`. Además de `actix-web`, el proyecto utiliza `reqwest` para enviar solicitudes, `serde` para serializar y deserializar JSON, y `time` para validar las fechas.
 
+### Construcción y publicación de la imagen Docker
+
+El `Dockerfile` de `api-rust` compila la aplicación en modo release y crea una imagen de ejecución basada en Debian, que expone el puerto `8080`. Para construir la imagen y publicarla en el registry Zot disponible en `34.170.72.85.sslip.io`, se ejecutaron los siguientes comandos desde el directorio `Proyecto3/api-rust`:
+
+```bash
+docker build -t 34.170.72.85.sslip.io/api-rust:v1 .
+docker push 34.170.72.85.sslip.io/api-rust:v1
+```
+
+El primer comando construye la imagen usando el directorio actual como contexto y la etiqueta como `api-rust:v1` en el registry. El segundo sube esa imagen al registry para que pueda ser utilizada en el despliegue de Kubernetes.
+
 ## Servicios en Go
+
+### Construcción y publicación de la imagen Docker de `go-deployment-1`
+
+El `Dockerfile` de `go-deployment-1` compila los binarios del receptor REST y del cliente gRPC, y los copia a una imagen de ejecución basada en Alpine. La imagen expone los puertos `8080` y `8081`; por defecto, inicia el receptor REST. Desde el directorio `Proyecto3`, se construyó y publicó con estos comandos:
+
+```bash
+docker build -t 34.170.72.85.sslip.io/go-deployment-1:v1 -f go-deployment-1/Dockerfile .
+docker push 34.170.72.85.sslip.io/go-deployment-1:v1
+```
+
+En `docker push` solo se indica la referencia de la imagen; las opciones `-f` y el contexto `.` corresponden al comando `docker build`.
 
 ### Modelo y validación de reportes
 
