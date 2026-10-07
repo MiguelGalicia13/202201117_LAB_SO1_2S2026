@@ -32,20 +32,22 @@ struct ApiResponse {
 // Web server
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let go_service_url = env::var("GO_SERVICE_URL").expect("GO_SERVICE_URL not set");
-
+    let raw_url = env::var("GO_SERVICE_URL")
+        .expect("GO_SERVICE_URL must be set");
+    let downstream_url = reqwest::Url::parse(&raw_url)
+        .expect("GO_SERVICE_URL must be a valid URL");
     let client = web::Data::new(
         Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
             .unwrap(),
     );
-    let go_service_url = web::Data::new(go_service_url);
+    let downstream_url = web::Data::new(downstream_url);
 
     HttpServer::new(move || {
         App::new()
             .app_data(client.clone())
-            .app_data(go_service_url.clone())
+            .app_data(downstream_url.clone())
             .route("/health", web::get().to(health_check))
             .route("/grpc-202201117", web::post().to(ingres_report))
     })
@@ -91,10 +93,14 @@ async fn ingres_report(
                 message: "Go service returned error".into(),
             })
         }
-        Err(e) => HttpResponse::ServiceUnavailable().json(ApiResponse {
-            status: "error".into(),
-            message: format!("Failed to ingest report: {}",e.to_string()),
-        }),
+        Err(e) => {
+            eprintln!("Failed to contact downstream service: {e}");
+            HttpResponse::ServiceUnavailable().json(ApiResponse {
+                status: "error".into(),
+                message: "Downstream service unavailable".into(),
+            })
+        }
+
     }
 }
 
