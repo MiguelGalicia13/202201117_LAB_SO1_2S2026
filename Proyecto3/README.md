@@ -203,6 +203,52 @@ Sustituye los valores entre `< >` por el nombre del `Service` de Go, el puerto q
 
 El cliente HTTP y la URL se comparten con los handlers mediante `web::Data`. Además de `actix-web`, el proyecto utiliza `reqwest` para enviar solicitudes, `serde` para serializar y deserializar JSON, y `time` para validar las fechas.
 
+## Servicios en Go
+
+### Modelo y validación de reportes
+
+El paquete `internals/report` contiene el tipo compartido `Report`, su validación y la función `Decode`, utilizada por el receptor HTTP. El JSON de entrada debe incluir `country`, `warplanes_in_air`, `warships_in_water` y `timestamp`.
+
+La validación acepta los países `USA`, `RUS`, `CHN`, `ESP` y `GTM`; requiere que ambos contadores estén presentes, sean valores `int32` no negativos; y exige un timestamp RFC 3339 en UTC, terminado en `Z` o `+00:00`. `Decode` limita el cuerpo a 1 MiB, rechaza campos JSON desconocidos y permite un solo documento JSON.
+
+### Receptor REST
+
+El servidor `go-deployment-1/rest-receiver` escucha en el puerto `8080` y expone:
+
+- `GET /health`: responde con estado HTTP `200 OK`.
+- `POST /report`: decodifica y valida el reporte. Si es válido, lo serializa como JSON y lo reenvía mediante HTTP `POST` a `http://127.0.0.1:8081/send`, con `Content-Type: application/json`.
+
+El cliente HTTP hacia `/send` tiene un timeout de cuatro segundos. Los errores al validar el reporte responden `400 Bad Request`; los errores de serialización o creación de la solicitud responden `500 Internal Server Error`; y los errores de conexión o las respuestas no exitosas del destino se convierten en `502 Bad Gateway`.
+
+El receptor REST reenvía las solicitudes a `127.0.0.1:8081/send`; por tanto, el receptor y el cliente gRPC deben compartir el mismo pod y su red local. No se encontraron manifiestos de Kubernetes para confirmar cómo están agrupados los contenedores.
+
+Cuando `/send` responde con éxito, el receptor REST copia el código HTTP, el `Content-Type` y el cuerpo de respuesta del cliente gRPC hacia quien llamó a `/report`.
+
+### Cliente gRPC
+
+El programa `go-deployment-1/grpc-client` cumple dos funciones: expone un puente HTTP local en `127.0.0.1:8081` y actúa como cliente del servicio gRPC `WarReportService`.
+
+Expone los siguientes endpoints:
+
+- `GET /health`: responde `200 OK`.
+- `POST /send`: decodifica y valida el JSON del reporte, lo convierte al mensaje Protobuf `WarReportRequest` y llama al método `SendReport`. Si la llamada tiene éxito, responde con el resultado en JSON; si falla, responde `502 Bad Gateway`.
+
+El contrato de la llamada se define en `proto/wartweets.proto`: `SendReport` recibe `WarReportRequest` —país, cantidades y timestamp— y devuelve `WarReportResponse`.
+
+El destino gRPC se configura con `GRPC_SERVER_ADDR`. Si la variable no está definida, se usa `dns:///go-grpc-service:50051`, que espera un Service de Kubernetes con el nombre `go-grpc-service` y puerto `50051`. Para configurar el destino explícitamente en el `Deployment`:
+
+```yaml
+env:
+  - name: GRPC_SERVER_ADDR
+    value: "dns:///go-grpc-service:50051"
+```
+
+El cliente utiliza el balanceador `round_robin`, credenciales de transporte inseguras (sin TLS) y un timeout de tres segundos para cada llamada gRPC. El valor `dns:///go-grpc-service:50051` debe resolverse desde el pod; las credenciales sin TLS son apropiadas solo si la comunicación ocurre en una red interna confiable.
+
+Al recibir `SIGTERM` o `SIGINT`, el servidor deja de aceptar solicitudes nuevas y espera hasta cinco segundos para que terminen las solicitudes HTTP en curso antes de cerrar la conexión gRPC. Al desplegarlo en Kubernetes, configura `terminationGracePeriodSeconds` con un valor superior a cinco segundos para permitir que el apagado gradual finalice.
+
+El flujo implementado es: API Rust → `POST /report` del receptor REST → `POST /send` local → RPC `WarReportService.SendReport` en el Service gRPC.
+
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
