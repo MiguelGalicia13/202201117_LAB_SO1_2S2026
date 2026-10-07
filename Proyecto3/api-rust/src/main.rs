@@ -34,7 +34,7 @@ struct ApiResponse {
 async fn main() -> std::io::Result<()> {
     let raw_url = env::var("GO_SERVICE_URL")
         .expect("GO_SERVICE_URL must be set");
-    let downstream_url = reqwest::Url::parse(&raw_url)
+    let _ = reqwest::Url::parse(&raw_url)
         .expect("GO_SERVICE_URL must be a valid URL");
     let client = web::Data::new(
         Client::builder()
@@ -42,12 +42,12 @@ async fn main() -> std::io::Result<()> {
             .build()
             .unwrap(),
     );
-    let downstream_url = web::Data::new(downstream_url);
+    let go_service_url = web::Data::new(raw_url);
 
     HttpServer::new(move || {
         App::new()
             .app_data(client.clone())
-            .app_data(downstream_url.clone())
+            .app_data(go_service_url.clone())
             .route("/health", web::get().to(health_check))
             .route("/grpc-202201117", web::post().to(ingres_report))
     })
