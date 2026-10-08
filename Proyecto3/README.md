@@ -271,6 +271,59 @@ Al recibir `SIGTERM` o `SIGINT`, el servidor deja de aceptar solicitudes nuevas 
 
 El flujo implementado es: API Rust → `POST /report` del receptor REST → `POST /send` local → RPC `WarReportService.SendReport` en el Service gRPC.
 
+## Generación de tráfico con Locust
+
+El cliente `locust/locustfile.py` envía reportes mediante `POST /grpc-202201117`.
+Cada solicitud genera un país aleatorio entre `USA`, `RUS`, `CHN`, `ESP` y `GTM`,
+entre 0 y 50 aviones, entre 0 y 30 barcos y un timestamp actual en UTC terminado en `Z`.
+La asignación `ESP` del carnet corresponde al dashboard; se generan los cinco países
+para alimentar también los rankings generales.
+
+Desde `Proyecto3/`, con `uv` instalado y Python 3.11 o posterior:
+
+```bash
+uv sync --project locust --locked
+uv run --project locust --locked python -m unittest discover -s locust -p 'test_*.py'
+```
+
+`uv` administra el entorno `locust/.venv` y las dependencias de `pyproject.toml`.
+El archivo `locust/uv.lock` fija también las dependencias transitivas y debe
+versionarse. Usa `uv add --project locust <paquete>` para agregar dependencias.
+
+Para usar la interfaz web con una API Rust local:
+
+```bash
+uv run --project locust --locked locust -f locust/locustfile.py --host http://127.0.0.1:8080
+```
+
+Abre `http://localhost:8089` y configura los usuarios concurrentes y la cantidad de
+usuarios nuevos por segundo. Cada usuario espera entre 1 y 2 segundos después de
+enviar un reporte; la tasa de creación de usuarios no es la cantidad de requests/s.
+El timeout de cada solicitud es de 10 segundos. Locust registra las respuestas HTTP
+de error y los fallos de conexión como solicitudes fallidas.
+
+Para una corrida sin interfaz, con 50 usuarios, incorporación de 5 usuarios/s y
+duración total de 2 minutos, incluyendo el aumento inicial de usuarios:
+
+```bash
+mkdir -p locust/results
+uv run --project locust --locked locust -f locust/locustfile.py \
+  --host http://127.0.0.1:8080 \
+  --headless --users 50 --spawn-rate 5 --run-time 2m --stop-timeout 10 \
+  --csv locust/results/baseline --csv-full-history
+```
+
+Para probar el flujo desplegado, sustituye `--host` por la URL pública del Gateway,
+sin añadir `/grpc-202201117`: el cliente agrega esa ruta. La ejecución requiere que
+Rust y sus dependencias estén disponibles; el cliente no inicia los servicios.
+Los CSV guardan estadísticas, evolución temporal, errores y excepciones; pueden
+utilizarse como evidencia de throughput, latencia y porcentaje de fallos. Conserva
+los mismos parámetros de carga y usa prefijos distintos al comparar réplicas.
+Los resultados y el entorno virtual quedan excluidos de Git.
+
+Referencias: [gestión de proyectos con uv](https://docs.astral.sh/uv/guides/projects/)
+y [ejecución sin interfaz de Locust](https://docs.locust.io/en/stable/running-without-web-ui.html).
+
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
