@@ -480,6 +480,15 @@ kubectl get services -n proyecto3
 ```
 ![](imgs/rabbitmq-services.png)
 
+### StatefulSet
+Este despliega una réplica de RabbitMQ en el namespace usando la imagen
+de rabbitmq que esta en zot y exponiendo el puerto AMQP 5672. Al ser un `StatefulSet`, el pod conserva una identidad estable y obtiene un volumen persistente de 5 GiB mediante `volumeClaimTemplates`, montado en `/var/lib/rabbitmq` para conservar los datos del broker al reemplazar el pod.
+
+El usuario y la contraseña iniciales se leen del Secret `rabbitmq-credentials`. El contenedor solicita `100m` de CPU y `256Mi` de memoria, con límites de `1` CPU y `1Gi` de memoria. La startup probecomprueba `rabbitmq-diagnostics ping` y la readiness probe espera a que el broker esté en ejecución antes de marcarlo listo.
+
+El `StatefulSet` referencia mediante `serviceName: rabbitmq-headless` al Service headless ya creado, que proporciona la identidad de red estable del pod. El StatefulSet no crea Services: el Service `rabbitmq`, que expone el puerto `5672` para que el writer se conecte por AMQP, también está definido por separado en el manifiesto de Services. Configura `RABBITMQ_URL` con las credenciales del Secret y la dirección de ese Service.
+
+![](imgs/rabbitmq-statefulset.png)
 
 # Recursos
 
