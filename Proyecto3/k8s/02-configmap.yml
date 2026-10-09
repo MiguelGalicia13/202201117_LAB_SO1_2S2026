@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: report-config
+  namespace: proyecto3
+data:
+  GO_SERVICE_URL: "http://go-rest-service:8080/report"
+  GRPC_SERVER_ADDR: "dns:///go-grpc-server:50051"
+  RABBIT_WRITER_URL: "http://127.0.0.1:8081/publish"
+  RABBITMQ_QUEUE: "military_reports"
