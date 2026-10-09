@@ -434,6 +434,43 @@ Los resultados y el entorno virtual quedan excluidos de Git.
 Referencias: [gestión de proyectos con uv](https://docs.astral.sh/uv/guides/projects/)
 y [ejecución sin interfaz de Locust](https://docs.locust.io/en/stable/running-without-web-ui.html).
 
+## Kubernetes
+
+### Namespace
+Aplicacion de namespace
+```bash
+kubectl apply -f k8s/01-namespace.yaml
+```
+### ConfigMap
+
+Para probar que el ConfigMap se aplica correctamente probamos ejectutarlo con
+```bash
+kubectl apply --dry-run=server -f k8s/02-configmap.yaml
+```
+Y si recibe un mensaje de confirmación, el ConfigMap se aplica correctamente. Por lo cual podemos aplicarlo con
+```bash
+kubectl apply -f k8s/02-configmap.yaml
+```
+### Secrets
+
+Para probar que el Secret se aplica correctamente probamos ejectutarlo con
+```bash
+kubectl apply --dry-run=server -f k8s/03-secret.yaml
+```
+Y si recibe un mensaje de confirmación, el Secret se aplica correctamente. Por lo cual podemos aplicarlo con
+```bash
+kubectl apply -f k8s/03-secret.yaml
+```
+Para verificar nuestras configuraciones fueron aplicadas correctamente usaremos los comandos
+```bash
+kubectl get namespace proyecto3
+kubectl get configmaps -n proyecto3
+kubectl get secrets -n proyecto3
+```
+![](imgs/global-configs.png)
+
+
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
+
