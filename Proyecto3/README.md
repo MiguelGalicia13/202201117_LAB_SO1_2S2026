@@ -479,6 +479,18 @@ Para rabbitmq se crearon 2 servicios: rabbitmq y rabbitmq-headless. Rabbitmq es 
 kubectl get services -n proyecto3
 ```
 ![](imgs/rabbitmq-services.png)
+#### gRPC Server
+
+El servicio de gRPC server permite el acceso interno al servidor gRPC mediante el puerto 50051. El servidor se comunica con el weiter del mismo pod por la ruta 127.0.0.1:8081/publish. Y el writer de RabbitMQ se publica mediante el servicio rabbitmq:5672
+
+Despues de aplicar su configuracion, verficamos que el servicio exista y consultamos sus destinos:
+
+```bash
+kubectl get service go-grpc-server -n proyecto3
+kubectl get endpointslices -n proyecto3 -l kubernetes.io/service-name=go-grpc-server
+```
+
+![](imgs/grpc-service-server.png)
 
 ### StatefulSet
 Este despliega una réplica de RabbitMQ en el namespace usando la imagen
