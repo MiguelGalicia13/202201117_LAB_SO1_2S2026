@@ -514,6 +514,25 @@ El `StatefulSet` referencia mediante `serviceName: rabbitmq-headless` al Service
 
 ### Deployments
 
+#### Deployment 1
+El go-deployment-1.yaml tiene la funcion de crear el despliguele llamado go-deployment-1 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-1 en su v1.
+
+El primer contenedor lleva como nombre rest-receiver y como su nombre lo indica recibe las peticiones REST, también expone el puerto 8080 para recibir las peticiones. Aparte de asignarle recursos, para comprobar su estado como `readiness` y `liveness` se realiza un get al endpoint `/health`.
+
+El segundo contenedor lleva como nombre grpc-client, su funcionalidad es recibir las peticiones que llegan por medio de la API REST y las procesa hacria el servidor GRPC. Por eso mismo en su configuración de `env` se hace referencia a la varible GRPC_SERVER_ADDR que contiene la dirección del servidor GRPC, este es tomado del configmap.
+
+De igual manera este se aplica con el comando
+```bash
+kubectl apply -f go-deployment-1/k8s/02-deployment.yml
+```
+Para verificar que el deployment se haya creado correctamente se puede ejecutar el comando
+```bash
+kubectl rollout status deployment/go-deployment-1 -n proyecto3
+```
+
+
+
+
 #### Deployment 2
 
 El go-deployment-2.yaml tiene la funcion de crear el despliguele llamado go-deployment-2 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-2 en su v1.
@@ -526,14 +545,15 @@ Este se aplica con el comando
 ```bash
 kubectl apply -f go-deployment-2/k8s/deployment.yml
 ```
-
+Y para verificar su estado se ejecuta
 ```bash
-kubectl rollout status deployment/go-deployment-2 -n proyecto3 --timeout=120s deployment "go-deployment-2" successfully rolled out
+kubectl rollout status deployment/go-deployment-2 -n proyecto3 --timeout=120s
 ```
 
-Para verificar el estado usamos el comando `ubectl get pods -n proyecto3 -l app=go-deployment-2 -w`
+Para observar el estado de los pods en tiempo real, ejecuta el comando `kubectl get pods -n proyecto3-w`.
 
-![](imgs/go-deployment-2.png)
+![](imgs/deployments.png)
+
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
