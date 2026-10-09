@@ -502,6 +502,28 @@ El `StatefulSet` referencia mediante `serviceName: rabbitmq-headless` al Service
 
 ![](imgs/rabbitmq-statefulset.png)
 
+### Deployments
+
+#### Deployment 2
+
+El go-deployment-2.yaml tiene la funcion de crear el despliguele llamado go-deployment-2 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-2 en su v1.
+
+El primer contenedor lleva como nombre grpc-server y como su nombre lo indica levanta el servidor grpc y le asigna el puerto 50051. Del configmap toma RABIT_WRITER_URL para su confguracion, para verificar su estado como `readiness`. De igual manera se le asignan recursos. 
+
+El segundo contenedor llamadp rabbit-writter llama a la imagen de go-deployment-2 e inicia el programa de rabbit-writer, busca en el secrets la clave de amqp-url y RabbitMQ_Queue en el configmap, se le asignan recursos y por medio de la ruta /ready en el puerto 8081 se comprueba su `readiness` y para `liveness` es la ruta /health
+
+Este se aplica con el comando 
+```bash
+kubectl apply -f go-deployment-2/k8s/deployment.yml
+```
+
+```bash
+kubectl rollout status deployment/go-deployment-2 -n proyecto3 --timeout=120s deployment "go-deployment-2" successfully rolled out
+```
+
+Para verificar el estado usamos el comando `ubectl get pods -n proyecto3 -l app=go-deployment-2 -w`
+
+![](imgs/go-deployment-2.png)
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
