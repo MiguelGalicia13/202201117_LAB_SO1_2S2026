@@ -271,6 +271,116 @@ Al recibir `SIGTERM` o `SIGINT`, el servidor deja de aceptar solicitudes nuevas 
 
 El flujo implementado es: API Rust → `POST /report` del receptor REST → `POST /send` local → RPC `WarReportService.SendReport` en el Service gRPC.
 
+### Go Deployment 2: servidor gRPC y writer RabbitMQ
+
+El servidor gRPC existente reenvía cada reporte a `http://127.0.0.1:8081/publish`.
+El nuevo `go-deployment-2/rabbit-writer` valida el JSON con `internals/report`,
+publica en RabbitMQ y devuelve `200` únicamente después del ACK del broker.
+Un reporte inválido devuelve `400`; una publicación no confirmada devuelve `503`.
+El servidor gRPC convierte ese fallo en `Unavailable` y solo devuelve
+`REPORT_PUBLISHED_TO_RABBITMQ` cuando el writer tuvo éxito.
+
+El writer escucha exclusivamente en `127.0.0.1:8081` y expone:
+
+- `POST /publish`: publicación con un plazo de 1.5 segundos, inferior al timeout
+  de 2 segundos usado por el servidor gRPC.
+- `GET /health`: confirma que el proceso HTTP está activo.
+- `GET /ready`: devuelve `200` cuando la conexión y el canal están disponibles;
+  devuelve `503` durante una caída o reconexión.
+
+`RABBITMQ_URL` es obligatoria y contiene la URL AMQP con las credenciales.
+`RABBITMQ_QUEUE` es opcional y utiliza `military_reports` como valor predeterminado.
+En GKE, configura las credenciales mediante un Secret y usa un usuario dedicado,
+sin guardar contraseñas reales en Git ni utilizar `guest` entre Pods.
+
+La conexión y el canal se reutilizan; un mutex serializa las publicaciones.
+La cola es durable y los mensajes usan `DeliveryMode: Persistent` y
+`ContentType: application/json`. Se publica al exchange predeterminado con el
+nombre de la cola y `mandatory=true`, rechazando también mensajes sin ruta.
+Ante una caída se recrean la conexión, el canal, la cola y las confirmaciones,
+con esperas de 1, 2, 4, 8 y hasta 10 segundos entre intentos fallidos.
+
+Un timeout de confirmación puede ocurrir después de que RabbitMQ haya recibido
+el reporte. El writer no lo reenvía automáticamente para evitar duplicados;
+no existe una garantía de entrega exactamente una vez.
+
+#### Prueba local
+
+Los siguientes valores de usuario y contraseña son únicamente para pruebas.
+Inicia un broker local desde `Proyecto3/`:
+
+```bash
+docker run -d --name p3-rabbitmq \
+  --publish 127.0.0.1:5672:5672 \
+  -e RABBITMQ_DEFAULT_USER=reports -e RABBITMQ_DEFAULT_PASS=local-test \
+  rabbitmq:4.3.6-alpine
+docker exec p3-rabbitmq rabbitmq-diagnostics -q ping
+```
+
+Espera a que RabbitMQ esté disponible antes de ejecutar las pruebas de integración:
+
+```bash
+RABBITMQ_TEST_URL=amqp://reports:local-test@127.0.0.1:5672/ go test -race ./...
+```
+
+Sin `RABBITMQ_TEST_URL`, las pruebas de validación y del contrato gRPC se ejecutan,
+y la prueba de integración con el broker se omite. Esta última utiliza una cola
+temporal propia y comprueba publicación persistente, concurrencia, reconexión y
+rechazo de mensajes sin ruta; elimina esa cola al terminar.
+
+Para ejecutar el writer y el servidor gRPC, usa dos terminales:
+
+```bash
+RABBITMQ_URL=amqp://reports:local-test@127.0.0.1:5672/ \
+  go run ./go-deployment-2/rabbit-writer
+```
+
+```bash
+go run ./go-deployment-2/grpc-server
+```
+
+Comprueba el writer en otra terminal:
+
+```bash
+curl --fail http://127.0.0.1:8081/ready
+curl --fail -X POST http://127.0.0.1:8081/publish \
+  -H 'Content-Type: application/json' \
+  -d '{"country":"ESP","warplanes_in_air":42,"warships_in_water":14,"timestamp":"2026-10-08T12:00:00Z"}'
+```
+
+Go Deployment 1 también utiliza `127.0.0.1:8081` para su cliente gRPC. Al probar
+ambos deployments simultáneamente, deben tener espacios de red separados, como
+los Pods previstos; no ejecutes ambos componentes locales en ese mismo puerto
+del host.
+
+#### Imagen de Go Deployment 2
+
+Construye desde `Proyecto3/`, usando ese directorio como contexto:
+
+```bash
+docker build -f go-deployment-2/Dockerfile -t go-deployment-2:local .
+```
+
+La imagen incluye `/app/grpc-server` y `/app/rabbit-writer` y ejecuta el servidor
+gRPC por defecto. Ambos procesos corren con usuario sin privilegios. Para probar
+los dos contenedores con un loopback compartido y el broker local anterior:
+
+```bash
+docker run -d --name p3-grpc-server --network container:p3-rabbitmq go-deployment-2:local
+docker run -d --name p3-rabbit-writer --network container:p3-rabbitmq \
+  -e RABBITMQ_URL=amqp://reports:local-test@127.0.0.1:5672/ \
+  --entrypoint /app/rabbit-writer go-deployment-2:local
+docker exec p3-rabbit-writer wget -qO- http://127.0.0.1:8081/ready
+```
+
+Usa este ejemplo Docker después de detener los procesos de `go run`.
+Esta prueba comparte también la red del broker para facilitar la conexión local;
+en Kubernetes solo `grpc-server` y `rabbit-writer` compartirán el Pod.
+Los manifiestos y la publicación de la imagen en Zot quedan pendientes.
+
+Referencias: [cliente AMQP para Go](https://pkg.go.dev/github.com/rabbitmq/amqp091-go)
+y [publisher confirms de RabbitMQ](https://www.rabbitmq.com/docs/confirms).
+
 ## Generación de tráfico con Locust
 
 El cliente `locust/locustfile.py` envía reportes mediante `POST /grpc-202201117`.
