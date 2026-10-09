@@ -10,7 +10,14 @@ import (
 	"time"
 )
 
-var client = &http.Client{Timeout: 4 * time.Second}
+var client = &http.Client{
+	Timeout: 4 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
 
 func main() {
 	mux := http.NewServeMux()
