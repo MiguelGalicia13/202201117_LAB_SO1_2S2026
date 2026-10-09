@@ -62,3 +62,4 @@ rustc-ice-*.txt
 #.idea/
 #Kubernetes
 *secrets.yml
+*_test.*

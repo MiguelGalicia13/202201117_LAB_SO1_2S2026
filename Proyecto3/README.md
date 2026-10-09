@@ -469,6 +469,17 @@ kubectl get secrets -n proyecto3
 ```
 ![](imgs/global-configs.png)
 
+### Servicios
+
+#### RabbitMQ
+
+Para rabbitmq se crearon 2 servicios: rabbitmq y rabbitmq-headless. Rabbitmq es el servicio principal que expone el puerto 5672, mientras que rabbitmq-headless es un servicio sin IP propia que se utiliza para la comunicación interna entre los pods.
+
+```bash
+kubectl get services -n proyecto3
+```
+![](imgs/rabbitmq-services.png)
+
 
 # Recursos
 
