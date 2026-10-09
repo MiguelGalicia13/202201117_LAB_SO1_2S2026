@@ -492,6 +492,16 @@ kubectl get endpointslices -n proyecto3 -l kubernetes.io/service-name=go-grpc-se
 
 ![](imgs/grpc-service-server.png)
 
+#### Go-Rest Service
+
+El servicio de go-rest-service es de tipo `ClusterIP` y expone el puerto 8080
+
+Se aplica con el comando 
+
+```bash
+kubectl apply -f go-deployment-1/k8s/01-service.yml
+```
+
 ### StatefulSet
 Este despliega una réplica de RabbitMQ en el namespace usando la imagen
 de rabbitmq que esta en zot y exponiendo el puerto AMQP 5672. Al ser un `StatefulSet`, el pod conserva una identidad estable y obtiene un volumen persistente de 5 GiB mediante `volumeClaimTemplates`, montado en `/var/lib/rabbitmq` para conservar los datos del broker al reemplazar el pod.
