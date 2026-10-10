@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-deployment-1
+  namespace: proyecto3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-deployment-1
+  template:
+    metadata:
+      labels:
+        app: go-deployment-1
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: rest-receiver
+          image: 34.170.72.85.sslip.io/go-deployment-1:v1
+          command: ["/app/rest-receiver"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests: {cpu: "100m", memory: "128Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+        - name: grpc-client
+          image: 34.170.72.85.sslip.io/go-deployment-1:v1
+          command: ["/app/grpc-client"]
+          env:
+            - name: GRPC_SERVER_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: report-config
+                  key: GRPC_SERVER_ADDR
+          resources:
+            requests: {cpu: "100m", memory: "128Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
+          readinessProbe:
+            exec:
+              command: ["wget", "-q","-O", "-", "http://127.0.0.1:8081/health"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["wget", "-q","-O", "-", "http://127.0.0.1:8081/health"]
+            periodSeconds: 10

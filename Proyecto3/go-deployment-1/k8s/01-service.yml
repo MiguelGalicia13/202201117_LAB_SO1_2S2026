@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-rest-service
+  namespace: proyecto3
+spec:
+  type: ClusterIP
+  selector:
+    app: go-deployment-1
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

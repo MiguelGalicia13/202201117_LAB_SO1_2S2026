@@ -492,6 +492,25 @@ kubectl get endpointslices -n proyecto3 -l kubernetes.io/service-name=go-grpc-se
 
 ![](imgs/grpc-service-server.png)
 
+#### Go-Rest Service
+
+El servicio de go-rest-service es de tipo `ClusterIP` y expone el puerto 8080
+
+Se aplica con el comando 
+
+```bash
+kubectl apply -f go-deployment-1/k8s/01-service.yml
+```
+#### api-rust-service
+
+El servicio de api-rust-service es de tipo `ClusterIP` y expone el puerto 80 para redirigir a 8080.
+
+Se aplica con el comando 
+
+```bash
+kubectl apply -f api-rust/k8s/01-service.yml
+```
+
 ### StatefulSet
 Este despliega una réplica de RabbitMQ en el namespace usando la imagen
 de rabbitmq que esta en zot y exponiendo el puerto AMQP 5672. Al ser un `StatefulSet`, el pod conserva una identidad estable y obtiene un volumen persistente de 5 GiB mediante `volumeClaimTemplates`, montado en `/var/lib/rabbitmq` para conservar los datos del broker al reemplazar el pod.
@@ -501,6 +520,65 @@ El usuario y la contraseña iniciales se leen del Secret `rabbitmq-credentials`.
 El `StatefulSet` referencia mediante `serviceName: rabbitmq-headless` al Service headless ya creado, que proporciona la identidad de red estable del pod. El StatefulSet no crea Services: el Service `rabbitmq`, que expone el puerto `5672` para que el writer se conecte por AMQP, también está definido por separado en el manifiesto de Services. Configura `RABBITMQ_URL` con las credenciales del Secret y la dirección de ese Service.
 
 ![](imgs/rabbitmq-statefulset.png)
+
+### Deployments
+
+#### Deployment 1
+El go-deployment-1.yml tiene la funcion de crear el despliguele llamado go-deployment-1 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-1 en su v1.
+
+El primer contenedor lleva como nombre rest-receiver y como su nombre lo indica recibe las peticiones REST, también expone el puerto 8080 para recibir las peticiones. Aparte de asignarle recursos, para comprobar su estado como `readiness` y `liveness` se realiza un get al endpoint `/health`.
+
+El segundo contenedor lleva como nombre grpc-client, su funcionalidad es recibir las peticiones que llegan por medio de la API REST y las procesa hacria el servidor GRPC. Por eso mismo en su configuración de `env` se hace referencia a la varible GRPC_SERVER_ADDR que contiene la dirección del servidor GRPC, este es tomado del configmap.
+
+De igual manera este se aplica con el comando
+```bash
+kubectl apply -f go-deployment-1/k8s/02-deployment.yml
+```
+Para verificar que el deployment se haya creado correctamente se puede ejecutar el comando
+```bash
+kubectl rollout status deployment/go-deployment-1 -n proyecto3
+```
+
+
+
+
+#### Deployment 2
+
+El go-deployment-2.yaml tiene la funcion de crear el despliguele llamado go-deployment-2 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-2 en su v1.
+
+El primer contenedor lleva como nombre grpc-server y como su nombre lo indica levanta el servidor grpc y le asigna el puerto 50051. Del configmap toma RABIT_WRITER_URL para su confguracion, para verificar su estado como `readiness`. De igual manera se le asignan recursos. 
+
+El segundo contenedor llamadp rabbit-writter llama a la imagen de go-deployment-2 e inicia el programa de rabbit-writer, busca en el secrets la clave de amqp-url y RabbitMQ_Queue en el configmap, se le asignan recursos y por medio de la ruta /ready en el puerto 8081 se comprueba su `readiness` y para `liveness` es la ruta /health
+
+Este se aplica con el comando 
+```bash
+kubectl apply -f go-deployment-2/k8s/deployment.yml
+```
+Y para verificar su estado se ejecuta
+```bash
+kubectl rollout status deployment/go-deployment-2 -n proyecto3 --timeout=120s
+```
+
+Para observar el estado de los pods en tiempo real, ejecuta el comando `kubectl get pods -n proyecto3-w`.
+
+#### Api-Rust
+
+El deployment de api-rust se encuentra en la carpeta `api-rust/k8s/02-deployment.yml`. El deployment llamado `api-rust` maneja un solo contenedor que llama la imagen de `api-rust` desde el zot registry. Habilita el puerto http en el puerto 8080. Luego busca el servicio de go en el configmap. Su readiness y el liveness se verifican en la ruta `/health`
+
+Para aplicar su configuración, ejecuta el comando 
+```bash
+kubectl apply -f api-rust/k8s/02-deployment.yml```
+Y para verificar su estado, ejecuta
+```bash
+kubectl rollout status deployment/api-rust -n proyecto3
+```
+
+Para ver los deployments creados se ejecuta el comando 
+```bash
+kubectl get deployments -n proyecto3
+```
+
+![](imgs/deployments.png)
 
 # Recursos
 

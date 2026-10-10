@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-deployment-2
+  namespace: proyecto3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-deployment-2
+  template:
+    metadata:
+      labels:
+        app: go-deployment-2
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: grpc-server
+          image: 34.170.72.85.sslip.io/go-deployment-2:v1
+          command: ["/app/grpc-server"]
+          ports:
+            - name: grpc
+              containerPort: 50051
+          env:
+            - name: RABBIT_WRITER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: report-config
+                  key: RABBIT_WRITER_URL
+          resources:
+            requests: {cpu: "100m", memory: "128Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            periodSeconds: 5
+        - name: rabbit-writer
+          image: 34.170.72.85.sslip.io/go-deployment-2:v1
+          command: ["/app/rabbit-writer"]
+          env:
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: amqp-url
+            - name: RABBITMQ_QUEUE
+              valueFrom:
+                configMapKeyRef:
+                  name: report-config
+                  key: RABBITMQ_QUEUE
+          resources: 
+            requests: {cpu: "100m", memory: "128Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
+          readinessProbe:
+            exec:
+              command: ["wget", "-q","-O", "-", "http://127.0.0.1:8081/ready"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["wget", "-q","-O", "-", "http://127.0.0.1:8081/health"]
+            periodSeconds: 10
