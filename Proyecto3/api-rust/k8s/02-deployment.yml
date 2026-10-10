@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-rust
+  namespace: proyecto3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-rust
+  template:
+    metadata:
+      labels:
+        app: api-rust
+    spec:
+      containers:
+        - name: api-rust
+          image: 34.170.72.85.sslip.io/api-rust:v1
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: GO_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: report-config
+                  key: GO_SERVICE_URL
+          resources:
+            requests: {cpu: "100m", memory: "128Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10

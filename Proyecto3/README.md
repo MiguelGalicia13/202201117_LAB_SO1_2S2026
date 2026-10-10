@@ -561,6 +561,23 @@ kubectl rollout status deployment/go-deployment-2 -n proyecto3 --timeout=120s
 
 Para observar el estado de los pods en tiempo real, ejecuta el comando `kubectl get pods -n proyecto3-w`.
 
+#### Api-Rust
+
+El deployment de api-rust se encuentra en la carpeta `api-rust/k8s/02-deployment.yml`. El deployment llamado `api-rust` maneja un solo contenedor que llama la imagen de `api-rust` desde el zot registry. Habilita el puerto http en el puerto 8080. Luego busca el servicio de go en el configmap. Su readiness y el liveness se verifican en la ruta `/health`
+
+Para aplicar su configuración, ejecuta el comando 
+```bash
+kubectl apply -f api-rust/k8s/02-deployment.yml```
+Y para verificar su estado, ejecuta
+```bash
+kubectl rollout status deployment/api-rust -n proyecto3
+```
+
+Para ver los deployments creados se ejecuta el comando 
+```bash
+kubectl get deployments -n proyecto3
+```
+
 ![](imgs/deployments.png)
 
 # Recursos
