@@ -501,6 +501,15 @@ Se aplica con el comando
 ```bash
 kubectl apply -f go-deployment-1/k8s/01-service.yml
 ```
+#### api-rust-service
+
+El servicio de api-rust-service es de tipo `ClusterIP` y expone el puerto 80 para redirigir a 8080.
+
+Se aplica con el comando 
+
+```bash
+kubectl apply -f api-rust/k8s/01-service.yml
+```
 
 ### StatefulSet
 Este despliega una réplica de RabbitMQ en el namespace usando la imagen
@@ -515,7 +524,7 @@ El `StatefulSet` referencia mediante `serviceName: rabbitmq-headless` al Service
 ### Deployments
 
 #### Deployment 1
-El go-deployment-1.yaml tiene la funcion de crear el despliguele llamado go-deployment-1 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-1 en su v1.
+El go-deployment-1.yml tiene la funcion de crear el despliguele llamado go-deployment-1 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-1 en su v1.
 
 El primer contenedor lleva como nombre rest-receiver y como su nombre lo indica recibe las peticiones REST, también expone el puerto 8080 para recibir las peticiones. Aparte de asignarle recursos, para comprobar su estado como `readiness` y `liveness` se realiza un get al endpoint `/health`.
 
