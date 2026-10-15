@@ -1,0 +1,17 @@
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: rust-health
+  namespace: proyecto3
+spec:
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        portSpecification: USE_FIXED_PORT
+        port: 8080
+        requestPath: /health
+  targetRef:
+    group: ""
+    kind: Service
+    name: api-rust-service

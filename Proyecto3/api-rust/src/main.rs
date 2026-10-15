@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{env, time::Duration};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use actix_web::middleware::Logger;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct WarReport {
@@ -43,9 +44,12 @@ async fn main() -> std::io::Result<()> {
             .unwrap(),
     );
     let go_service_url = web::Data::new(raw_url);
-
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info")
+    ).init();
     HttpServer::new(move || {
         App::new()
+            .wrap(Logger::default())
             .app_data(client.clone())
             .app_data(go_service_url.clone())
             .route("/health", web::get().to(health_check))
@@ -76,16 +80,21 @@ async fn ingres_report(
             message: "Invalid report".into(),
         });
     }
+    log::info!("VALID REPORT RECIEVED, {}", report.country);
     match client
         .post(go_service_url.get_ref().as_str())
         .json(&report)
         .send()
         .await
     {
-        Ok(response) if response.status().is_success() => HttpResponse::Ok().json(ApiResponse {
+        Ok(response) if response.status().is_success() => {
+        log::info!("REPORT SUCCESSFULLY SENT TO GO");
+        HttpResponse::Ok().json(ApiResponse {
             status: "success".into(),
             message: "Report processed and forwarded to Go".into(),
-        }),
+            })
+        },
+        
         Ok(response) => {
             eprintln!("Go service returned status: {}", response.status());
             HttpResponse::BadGateway().json(ApiResponse {

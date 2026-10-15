@@ -4,7 +4,6 @@ metadata:
   name: api-rust
   namespace: proyecto3
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: api-rust
@@ -15,11 +14,13 @@ spec:
     spec:
       containers:
         - name: api-rust
-          image: 34.170.72.85.sslip.io/api-rust:v1
+          image: 34.170.72.85.sslip.io/api-rust:v4
           ports:
             - name: http
               containerPort: 8080
           env:
+            - name: RUST_LOG
+              value: info
             - name: GO_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
