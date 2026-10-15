@@ -439,27 +439,27 @@ y [ejecución sin interfaz de Locust](https://docs.locust.io/en/stable/running-w
 ### Namespace
 Aplicacion de namespace
 ```bash
-kubectl apply -f k8s/01-namespace.yaml
+kubectl apply -f k8s/01-namcespace.yml
 ```
 ### ConfigMap
 
 Para probar que el ConfigMap se aplica correctamente probamos ejectutarlo con
 ```bash
-kubectl apply --dry-run=server -f k8s/02-configmap.yaml
+kubectl apply --dry-run=server -f k8s/02-configmap.yml
 ```
-Y si recibe un mensaje de confirmación, el ConfigMap se aplica correctamente. Por lo cual podemos aplicarlo con
+Si la validación termina correctamente, el archivo es aceptado por el servidor, pero todavía no se aplica. Para aplicarlo ejecutamos
 ```bash
-kubectl apply -f k8s/02-configmap.yaml
+kubectl apply -f k8s/02-configmap.yml
 ```
 ### Secrets
 
 Para probar que el Secret se aplica correctamente probamos ejectutarlo con
 ```bash
-kubectl apply --dry-run=server -f k8s/03-secret.yaml
+kubectl apply --dry-run=server -f k8s/03-secrets.yml
 ```
-Y si recibe un mensaje de confirmación, el Secret se aplica correctamente. Por lo cual podemos aplicarlo con
+Si la validación termina correctamente, el archivo es aceptado por el servidor, pero todavía no se aplica. Para aplicarlo ejecutamos
 ```bash
-kubectl apply -f k8s/03-secret.yaml
+kubectl apply -f k8s/03-secrets.yml
 ```
 Para verificar nuestras configuraciones fueron aplicadas correctamente usaremos los comandos
 ```bash
@@ -481,7 +481,7 @@ kubectl get services -n proyecto3
 ![](imgs/rabbitmq-services.png)
 #### gRPC Server
 
-El servicio de gRPC server permite el acceso interno al servidor gRPC mediante el puerto 50051. El servidor se comunica con el weiter del mismo pod por la ruta 127.0.0.1:8081/publish. Y el writer de RabbitMQ se publica mediante el servicio rabbitmq:5672
+El servicio de gRPC server permite el acceso interno al servidor gRPC mediante el puerto 50051. El servidor se comunica con el writer del mismo Pod por la ruta `127.0.0.1:8081/publish`. El writer publica los mensajes en RabbitMQ mediante el Service `rabbitmq:5672`.
 
 Despues de aplicar su configuracion, verficamos que el servicio exista y consultamos sus destinos:
 
@@ -524,7 +524,7 @@ El `StatefulSet` referencia mediante `serviceName: rabbitmq-headless` al Service
 ### Deployments
 
 #### Deployment 1
-El go-deployment-1.yml tiene la funcion de crear el despliguele llamado go-deployment-1 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-1 en su v1.
+El manifiesto `go-deployment-1/k8s/02-deployment.yml` crea el Deployment llamado `go-deployment-1` que cuenta con 2 contenedores, ambos usan la imagen de go-deployment-1 en su v1.
 
 El primer contenedor lleva como nombre rest-receiver y como su nombre lo indica recibe las peticiones REST, también expone el puerto 8080 para recibir las peticiones. Aparte de asignarle recursos, para comprobar su estado como `readiness` y `liveness` se realiza un get al endpoint `/health`.
 
@@ -544,11 +544,11 @@ kubectl rollout status deployment/go-deployment-1 -n proyecto3
 
 #### Deployment 2
 
-El go-deployment-2.yaml tiene la funcion de crear el despliguele llamado go-deployment-2 que cuenta con 2 conetenedores, ambos comparten la imagen de go-deployment-2 en su v1.
+El manifiesto `go-deployment-2/k8s/deployment.yml` crea el Deployment llamado `go-deployment-2` que cuenta con 2 contenedores, ambos usan la imagen de go-deployment-2 en su v1.
 
-El primer contenedor lleva como nombre grpc-server y como su nombre lo indica levanta el servidor grpc y le asigna el puerto 50051. Del configmap toma RABIT_WRITER_URL para su confguracion, para verificar su estado como `readiness`. De igual manera se le asignan recursos. 
+El primer contenedor lleva como nombre grpc-server y como su nombre lo indica levanta el servidor gRPC en el puerto 50051. Del ConfigMap toma `RABBIT_WRITER_URL` para comunicarse con el writer. Su `readiness` comprueba el puerto mediante `tcpSocket`. De igual manera se le asignan recursos.
 
-El segundo contenedor llamadp rabbit-writter llama a la imagen de go-deployment-2 e inicia el programa de rabbit-writer, busca en el secrets la clave de amqp-url y RabbitMQ_Queue en el configmap, se le asignan recursos y por medio de la ruta /ready en el puerto 8081 se comprueba su `readiness` y para `liveness` es la ruta /health
+El segundo contenedor llamado rabbit-writer usa la imagen de go-deployment-2 e inicia el programa de rabbit-writer. Busca en el Secret la clave `amqp-url` y en el ConfigMap la clave `RABBITMQ_QUEUE`. Se le asignan recursos y por medio de la ruta `/ready` en el puerto 8081 se comprueba su `readiness`; para `liveness` se usa la ruta `/health`.
 
 Este se aplica con el comando 
 ```bash
@@ -559,7 +559,7 @@ Y para verificar su estado se ejecuta
 kubectl rollout status deployment/go-deployment-2 -n proyecto3 --timeout=120s
 ```
 
-Para observar el estado de los pods en tiempo real, ejecuta el comando `kubectl get pods -n proyecto3-w`.
+Para observar el estado de los Pods en tiempo real, ejecuta el comando `kubectl get pods -n proyecto3 -w`.
 
 #### Api-Rust
 
@@ -567,7 +567,8 @@ El deployment de api-rust se encuentra en la carpeta `api-rust/k8s/02-deployment
 
 Para aplicar su configuración, ejecuta el comando 
 ```bash
-kubectl apply -f api-rust/k8s/02-deployment.yml```
+kubectl apply -f api-rust/k8s/02-deployment.yml
+```
 Y para verificar su estado, ejecuta
 ```bash
 kubectl rollout status deployment/api-rust -n proyecto3
@@ -579,6 +580,206 @@ kubectl get deployments -n proyecto3
 ```
 
 ![](imgs/deployments.png)
+
+### Preparación de Gateway API
+
+Los manifiestos siguientes se aplicaron uno por uno después de habilitar Gateway API. Los comandos de esta sección permiten reproducir el despliegue desde la carpeta `Proyecto3`. Primero verificamos el contexto del clúster:
+
+```bash
+kubectl config current-context
+kubectl get gatewayclass
+kubectl api-resources --api-group=networking.gke.io
+```
+
+Gateway API requiere un clúster VPC-native y el complemento `HttpLoadBalancing` habilitado. Para consultar la configuración de este clúster ejecutamos:
+
+```bash
+gcloud container clusters describe cluster-p3-202201117 \
+  --zone=us-central1-a --project=sopes1-510723 \
+  --format='json(ipAllocationPolicy.useIpAliases,addonsConfig.httpLoadBalancing,networkConfig.gatewayApiConfig)'
+```
+
+Si todavía no aparecen GatewayClass ni HealthCheckPolicy, habilitamos Gateway API con el siguiente comando. Este comando actualiza GKE; crear los archivos YAML no lo ejecuta automáticamente.
+
+```bash
+gcloud container clusters update cluster-p3-202201117 \
+  --zone=us-central1-a --project=sopes1-510723 \
+  --gateway-api=standard
+```
+
+Si `addonsConfig.httpLoadBalancing.disabled` es `true`, también debemos habilitar ese complemento antes de continuar:
+
+```bash
+gcloud container clusters update cluster-p3-202201117 \
+  --zone=us-central1-a --project=sopes1-510723 \
+  --update-addons=HttpLoadBalancing=ENABLED
+```
+
+Después esperamos a que `kubectl get gatewayclass` muestre `gke-l7-global-external-managed` con `ACCEPTED=True` y que `kubectl api-resources --api-group=networking.gke.io` incluya `HealthCheckPolicy`. No se crea un GatewayClass propio ni se instalan CRDs ajenas al controlador de GKE.
+
+Referencia: [habilitar y desplegar Gateway API en GKE](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/deploying-gateways).
+
+### HealthCheckPolicy de Rust
+
+El manifiesto `api-rust/k8s/03-healthcheck-policy.yml` crea la política `rust-health` en el namespace `proyecto3`. Se asocia al Service `api-rust-service` y configura la comprobación del balanceador con HTTP en la ruta `/health` y el puerto 8080 del Pod. Se usa esa ruta porque la API Rust devuelve 200 en `/health`, mientras que no tiene un endpoint GET en `/`. Esta política configura la salud del backend del balanceador; las probes del Deployment siguen comprobando el estado del contenedor.
+
+Una vez disponibles las APIs de GKE, validamos y aplicamos el manifiesto:
+
+```bash
+kubectl apply --dry-run=server -f api-rust/k8s/03-healthcheck-policy.yml
+kubectl apply -f api-rust/k8s/03-healthcheck-policy.yml
+```
+
+Para consultar la política ejecutamos:
+
+```bash
+kubectl describe healthcheckpolicy rust-health -n proyecto3
+```
+
+El controlador asocia esta política al backend cuando el Service está referenciado por el HTTPRoute. El puerto 8080 corresponde al proceso Rust; el puerto de entrada del Service sigue siendo 80.
+
+Referencia: [HealthCheckPolicy en GKE](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/configure-gateway-resources).
+
+### Gateway
+
+El manifiesto `k8s/04-gateway.yml` crea `reports-gateway` en `proyecto3`. Usa la clase `gke-l7-global-external-managed` para que GKE cree el balanceador externo y su dirección pública. Define un listener llamado `http` en el puerto 80 y permite asociar rutas únicamente del mismo namespace. Esta configuración inicial utiliza HTTP; HTTPS requiere un certificado y la configuración de un listener TLS.
+
+Para validar y aplicar ejecutamos:
+
+```bash
+kubectl apply --dry-run=server -f k8s/04-gateway.yml
+kubectl apply -f k8s/04-gateway.yml
+```
+
+Para verificar su estado ejecutamos:
+
+```bash
+kubectl get gateway reports-gateway -n proyecto3
+kubectl describe gateway reports-gateway -n proyecto3
+```
+
+Esperamos la condición `Programmed=True` y una dirección en `status.addresses`. El aprovisionamiento puede tardar varios minutos. Antes de asociar el HTTPRoute no existe una ruta hacia Rust. Aplicar este Gateway puede crear un balanceador facturable en GCP.
+
+### HTTPRoute
+
+El manifiesto `k8s/05-httproute.yml` crea la ruta `reports-route` en `proyecto3`. Su `parentRefs` apunta a `reports-gateway` y al listener `http`. La regla coincide exactamente con `/grpc-202201117` y envía las peticiones al Service `api-rust-service` por su puerto 80. No cambia la ruta, ya que Rust espera ese mismo endpoint. Aunque el path se llama grpc, la entrada pública usa HTTP y JSON; la comunicación gRPC ocurre entre los servicios Go.
+
+Para validar y aplicar ejecutamos:
+
+```bash
+kubectl apply --dry-run=server -f k8s/05-httproute.yml
+kubectl apply -f k8s/05-httproute.yml
+```
+
+Para verificar su asociación al Gateway y al Service ejecutamos:
+
+```bash
+kubectl describe httproute reports-route -n proyecto3
+```
+
+Esperamos `Accepted=True` y `ResolvedRefs=True` dentro del estado de su parent. La coincidencia `Exact` no incluye `/grpc-202201117/` ni `/health` en la entrada pública. Para revisar la salud de Rust antes del Gateway podemos usar port-forward al Service en una terminal y consultar `/health` en otra:
+
+```bash
+kubectl port-forward service/api-rust-service 8080:80 -n proyecto3
+```
+
+```bash
+curl --fail http://127.0.0.1:8080/health
+```
+
+Después cerramos el port-forward con `Ctrl+C`.
+
+### HPA de Rust
+
+El manifiesto `api-rust/k8s/04-hpa.yml` crea `api-rust-hpa`. Su `scaleTargetRef` apunta al Deployment `api-rust` y mantiene entre 1 y 3 réplicas, con un objetivo de utilización media de CPU del 30 %. El porcentaje se calcula respecto al `requests.cpu` de cada Pod: con `100m` de request, el objetivo equivale aproximadamente a `30m` de CPU por Pod, no al 30 % de la CPU del nodo.
+
+El YAML del Deployment Rust ya no fija `spec.replicas`, para que volver a aplicarlo no sobrescriba el número de réplicas que decida el HPA. Un Deployment nuevo sin ese campo inicia con una réplica; el HPA toma el control al aplicarse.
+
+Antes de aplicar el HPA comprobamos que GKE entregue métricas de recursos:
+
+```bash
+kubectl api-resources --api-group=metrics.k8s.io
+kubectl get --raw /apis/metrics.k8s.io
+kubectl top pods -n proyecto3
+```
+
+Si la API no existe o las métricas no están disponibles, el HPA no podrá calcular la CPU. Primero hay que revisar el componente de métricas de GKE; aumentar manualmente las réplicas no verifica el autoscalado.
+
+Para validar y aplicar ejecutamos:
+
+```bash
+kubectl apply --dry-run=server -f api-rust/k8s/04-hpa.yml
+kubectl apply -f api-rust/k8s/04-hpa.yml
+```
+
+Para consultar sus métricas y observar el escalado ejecutamos:
+
+```bash
+kubectl get hpa api-rust-hpa -n proyecto3
+kubectl describe hpa api-rust-hpa -n proyecto3
+kubectl get hpa,pods -n proyecto3 -w
+```
+
+La utilización debe aparecer con un valor de CPU y no quedar como `<unknown>`. Crear el HPA no demuestra que haya escalado: hace falta generar carga y registrar las réplicas antes, durante y después de la prueba. Durante una prueba es normal que el HPA tarde en reducir las réplicas por su ventana de estabilización.
+
+Referencia: [Horizontal Pod Autoscaling](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/).
+
+### Validación del flujo desplegado
+
+Los nuevos recursos se aplican en este orden: habilitación de Gateway API, HealthCheckPolicy, Gateway, HTTPRoute y HPA cuando las métricas estén disponibles. Los Deployments, Services y el broker de la fase anterior deben estar listos. La validación `--dry-run=server` acepta o rechaza el YAML sin desplegarlo; no comprueba tráfico ni escalado.
+
+Para comprobar los recursos ejecutamos:
+
+```bash
+kubectl get deployments,pods,services,pvc,hpa -n proyecto3
+kubectl get gateway,httproute,healthcheckpolicy -n proyecto3
+kubectl get endpointslices -n proyecto3
+```
+
+Una vez el Gateway esté programado y el HTTPRoute aceptado, obtenemos su IP:
+
+```bash
+http://136.68.255.122/=$(kubectl get gateway reports-gateway -n proyecto3 -o jsonpath='{.status.addresses[0].value}')
+```
+
+Para enviar un reporte de prueba ejecutamos el siguiente comando. Esta operación debe crear un mensaje en RabbitMQ si todo el flujo funciona:
+
+```bash
+curl --fail-with-body -X POST "http://${http://136.68.255.122/}/grpc-202201117" \
+  -H 'Content-Type: application/json' \
+  --data "{\"country\":\"ESP\",\"warplanes_in_air\":1,\"warships_in_water\":1,\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+```
+
+Esperamos HTTP 200 y una respuesta de Rust con `status: success`. El estado `REPORT_PUBLISHED_TO_RABBITMQ` pertenece a la respuesta gRPC interna, que Rust no devuelve directamente. Para consultar la cola sin imprimir credenciales ejecutamos antes y después de la prueba:
+
+```bash
+kubectl exec rabbitmq-0 -n proyecto3 -- rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+```
+
+Para generar la carga inicial usamos Locust con uv. Primero creamos la carpeta de resultados y usamos un prefijo diferente en cada ejecución:
+
+```bash
+mkdir -p locust/results
+uv run --project locust --locked locust -f locust/locustfile.py \
+  --host "http://${http://136.68.255.122/}" --headless --users 50 --spawn-rate 5 \
+  --run-time 60s --stop-timeout 10 --csv locust/results/gke-baseline
+```
+
+Las solicitudes fallidas, latencias, mensajes en RabbitMQ y cambios de réplicas deben registrarse como evidencia. La comparación de 1 y 2 réplicas Go necesita demostrar distribución real de llamadas gRPC; tener dos Pods Ready no basta. Esta primera fase llega hasta RabbitMQ; Consumer, Operator, Valkey y Grafana continúan pendientes de implementación.
+
+#### Resultado de aplicación y comprobaciones
+
+Se habilitó Gateway API Standard en `cluster-p3-202201117` y se aplicaron, en orden, HealthCheckPolicy, Gateway, HTTPRoute, el ajuste del Deployment Rust y HPA. La API `metrics.k8s.io` ya está disponible y `kubectl top pods` entrega métricas.
+
+- `rust-health`: condición `Attached=True`, comprobación HTTP `/health` en 8080.
+- `reports-gateway`: `Accepted=True`, `Programmed=True`, `Ready=True` y `GatewayHealthy=True`. Dirección pública asignada: `136.68.255.122`.
+- `reports-route`: `Accepted=True` y `ResolvedRefs=True`, con backend `api-rust-service:80`.
+- El backend de Rust en GCP aparece `HEALTHY`, con endpoint del Pod en 8080.
+- `api-rust-hpa`: CPU disponible, objetivo 30 %, mínimo 1 y máximo 3; `AbleToScale=True` y `ScalingActive=True`. Rust quedó con una réplica disponible. No se realizó una prueba de escalado bajo carga.
+
+La prueba de un POST válido a `http://136.68.255.122/grpc-202201117` devolvió HTTP 500 con el mensaje `Requested application data is not configured correctly`. Una petición interna al mismo endpoint mediante `api-rust-service` también devolvió 500. Esto sitúa el problema en la aplicación Rust desplegada; el Gateway tiene su regla de ruta y backend configurados correctamente. La cola `military_reports` permaneció con cero mensajes.
+
+Queda pendiente revisar la configuración de datos de Actix de la imagen `api-rust:v1` y su correspondencia con el código actual antes de repetir el POST y ejecutar Locust. Las comprobaciones `/health` no detectan este error del handler de reportes; no se considera validado todavía el flujo completo hasta RabbitMQ.
 
 # Recursos
 
