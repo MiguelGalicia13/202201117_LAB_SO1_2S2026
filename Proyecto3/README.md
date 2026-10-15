@@ -735,6 +735,9 @@ kubectl get deployments,pods,services,pvc,hpa -n proyecto3
 kubectl get gateway,httproute,healthcheckpolicy -n proyecto3
 kubectl get endpointslices -n proyecto3
 ```
+![](imgs/comprobacion.png)
+
+
 
 Una vez el Gateway esté programado y el HTTPRoute aceptado, obtenemos su IP:
 
@@ -781,6 +784,8 @@ La prueba de un POST válido a `http://136.68.255.122/grpc-202201117` devolvió 
 
 Queda pendiente revisar la configuración de datos de Actix de la imagen `api-rust:v1` y su correspondencia con el código actual antes de repetir el POST y ejecutar Locust. Las comprobaciones `/health` no detectan este error del handler de reportes; no se considera validado todavía el flujo completo hasta RabbitMQ.
 
+
+![](imgs/locust-charts.png)
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
