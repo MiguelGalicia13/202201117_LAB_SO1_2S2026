@@ -13,6 +13,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"github.com/google/uuid"
 
 	"github.com/MiguelGalicia13/202201117_LAB_SO1_2S2026/Proyecto3/internals/report"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -117,9 +118,13 @@ func (w *writer) publish(ctx context.Context, body []byte) error {
 		return err
 	}
 	defer session.socket.SetWriteDeadline(time.Time{})
+	id, err := uuid.NewV7()
+	if err != nil {
+		log.Fatalf("Error al generar UUID v7: %v", err)
+	}
 	confirmation, err := session.channel.PublishWithDeferredConfirmWithContext(
 		ctx, "", w.queue, true, false,
-		amqp.Publishing{ContentType: "application/json", DeliveryMode: amqp.Persistent, Body: body},
+		amqp.Publishing{ContentType: "application/json", DeliveryMode: amqp.Persistent, Body: body, MessageId: id.String()},
 	)
 	if err == nil {
 		var ack bool
