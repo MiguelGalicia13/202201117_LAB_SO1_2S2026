@@ -96,11 +96,11 @@ func run() error {
 			err := json.Unmarshal(deliveriy.Body, &reporteSend)
 			if err != nil {
 				log.Println("[ERROR] UNMARSHAL FAILED", err)
-				continue
+				return fmt.Errorf("could not unmarshal: %w", err)
 			}
 			if err := reporteSend.Validate(); err != nil {
 				log.Println("[ERROR] VALIDATE FAILED", err)
-				continue
+				return fmt.Errorf("could not validate: %w", err)
 			}
 			id := rand.Text()
 			err = rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body)).Err()
@@ -123,7 +123,11 @@ func run() error {
 			// Llevar contador de naves segun el pais
 			switch reporteSend.Country {
 			case "ESP":
-				rdb.Incr(valkeyCtx, "system::spainCount")
+				err = rdb.Incr(valkeyCtx, "system::spainCount").Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT system::spainCount", err)
+					return fmt.Errorf("could not increment system::spainCount: %w", err)
+				}
 				err = rdb.IncrBy(valkeyCtx, "ranking::spainAirplanes", int64(reporteSend.WarplanesInAir)).Err()
 				if err != nil {
 					log.Println("[ERROR] COULD NOT INCREMENT ranking::spainAirplanes", err)
@@ -200,14 +204,19 @@ func run() error {
 				log.Println("[ERROR] COULD NOT SET system::shipsMode", err)
 				return fmt.Errorf("could not set system::shipsMode: %w", err)
 			}
-
+			err = deliveriy.Ack(false)
+			if err != nil {
+				log.Println("[ERROR] COULD NOT ACK", err)
+				return fmt.Errorf("could not ack: %w", err)
+			}
+			
 		}
 	}
 }
 
 func getMode(reports map[string]string, key string) float64 {
 	transport := make([]float64, 0, len(reports))
-	for content := range reports {
+	for _, content := range reports {
 		var read report.Report
 		err := json.Unmarshal([]byte(content), &read)
 		if err != nil {
