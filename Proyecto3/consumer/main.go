@@ -75,17 +75,17 @@ func run() error {
 		return err
 	}
 	rdb.Set(valkeyCtx, "system::spainCount", 0, 0)
-	rdb.Set(valkeyCtx, "stream::spainAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "stream::usAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "stream::russiaAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "stream::chinaAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "stream::gtmAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::spainAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::usAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::russiaAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::chinaAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::gtmAirplanes", 0, 0)
 
-	rdb.Set(valkeyCtx, "stream::spainBoats", 0, 0)
-	rdb.Set(valkeyCtx, "stream::usBoats", 0, 0)
-	rdb.Set(valkeyCtx, "stream::russiaBoats", 0, 0)
-	rdb.Set(valkeyCtx, "stream::chinaBoats", 0, 0)
-	rdb.Set(valkeyCtx, "stream::gtmBoats", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::spainBoats", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::usBoats", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::russiaBoats", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::chinaBoats", 0, 0)
+	rdb.Set(valkeyCtx, "ranking::gtmBoats", 0, 0)
 	for {
 		select {
 			case <- rabbitCtx.Done():
@@ -121,20 +121,20 @@ func run() error {
 				switch reporteSend.Country{
 					case "ESP":
 						rdb.Incr(valkeyCtx, "system::spainCount")
-						rdb.IncrBy(valkeyCtx, "stream::spainAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "stream::spainBoats", int64(reporteSend.WarshipsInWater))
+						rdb.IncrBy(valkeyCtx, "ranking::spainAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "ranking::spainBoats", int64(reporteSend.WarshipsInWater))
 					case "US":
-						rdb.IncrBy(valkeyCtx, "stream::usAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "stream::usBoats", int64(reporteSend.WarshipsInWater))
+						rdb.IncrBy(valkeyCtx, "ranking::usAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "ranking::usBoats", int64(reporteSend.WarshipsInWater))
 					case "CHN":
-						rdb.IncrBy(valkeyCtx, "stream::chinaAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "stream::chinaBoats", int64(reporteSend.WarshipsInWater))
+						rdb.IncrBy(valkeyCtx, "ranking::chinaAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "ranking::chinaBoats", int64(reporteSend.WarshipsInWater))
 					case "RUS":
-						rdb.IncrBy(valkeyCtx, "stream::russiaAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "stream::russiaBoats", int64(reporteSend.WarshipsInWater))
+						rdb.IncrBy(valkeyCtx, "ranking::russiaAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "ranking::russiaBoats", int64(reporteSend.WarshipsInWater))
 					case "GTM":
-						rdb.IncrBy(valkeyCtx, "stream::gtmAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "stream::gtmBoats", int64(reporteSend.WarshipsInWater))
+						rdb.IncrBy(valkeyCtx, "ranking::gtmAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "ranking::gtmBoats", int64(reporteSend.WarshipsInWater))
 				}
 				// Obtener registros para resto de datos
 				reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
