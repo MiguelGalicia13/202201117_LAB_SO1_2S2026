@@ -86,6 +86,9 @@ func run() error {
 	rdb.Set(valkeyCtx, "ranking::russiaBoats", 0, 0)
 	rdb.Set(valkeyCtx, "ranking::chinaBoats", 0, 0)
 	rdb.Set(valkeyCtx, "ranking::gtmBoats", 0, 0)
+
+	rdb.Set(valkeyCtx, "stream::WarplanesInAir", 0, 0)
+	rdb.Set(valkeyCtx, "stream::WarshipsInWater", 0, 0)
 	for {
 		select {
 			case <- rabbitCtx.Done():
@@ -116,6 +119,9 @@ func run() error {
 				}
 				id := rand.Text()
 				rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body))
+				rdb.IncrBy(valkeyCtx, "stream::WarplanesInAir", int64(reporteSend.WarplanesInAir))
+				rdb.IncrBy(valkeyCtx, "stream::WarshipsInWater", int64(reporteSend.WarshipsInWater))
+				
 				// Incrementar contador de reportes de España si el reporte es de España}
 				// Llevar contador de naves segun el pais
 				switch reporteSend.Country{
