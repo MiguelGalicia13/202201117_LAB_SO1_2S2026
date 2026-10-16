@@ -91,70 +91,130 @@ func run() error {
 	rdb.Set(valkeyCtx, "stream::WarshipsInWater", 0, 0)
 	for {
 		select {
-			case <- rabbitCtx.Done():
-				log.Println("[ERROR] RABBITMQ CONTEXT DONE")
-				return nil
-			case deliveriy, ok := <- deliveries:
-				if !ok{
-					log.Println("[ERROR] DELIVERIES CHANNEL CLOSED")
-					return fmt.Errorf("DELIVERIES CHANNEL CLOSED")
-				}
-				log.Printf("[LOG] MESSAGE RECIEVED: %s", deliveriy.Body)
-				/*
-				 * Info que se puede obtener de esta key
-				 * Maximo cantidad de aviones reportados
-				 * Minima cantidad de aviones reportados
-				 * Maxima cantidad de barcos reportados
-				 * Minima cantidad de barcos reportados
-				 */
-				var reporteSend report.Report
-				err := json.Unmarshal(deliveriy.Body, &reporteSend)
+		case <-rabbitCtx.Done():
+			log.Println("[ERROR] RABBITMQ CONTEXT DONE")
+			return nil
+		case deliveriy, ok := <-deliveries:
+			if !ok {
+				log.Println("[ERROR] DELIVERIES CHANNEL CLOSED")
+				return fmt.Errorf("DELIVERIES CHANNEL CLOSED")
+			}
+			log.Printf("[LOG] MESSAGE RECIEVED: %s", deliveriy.Body)
+			/*
+			 * Info que se puede obtener de esta key
+			 * Maximo cantidad de aviones reportados
+			 * Minima cantidad de aviones reportados
+			 * Maxima cantidad de barcos reportados
+			 * Minima cantidad de barcos reportados
+			 */
+			var reporteSend report.Report
+			err := json.Unmarshal(deliveriy.Body, &reporteSend)
+			if err != nil {
+				log.Println("[ERROR] UNMARSHAL FAILED", err)
+				continue
+			}
+			if err := reporteSend.Validate(); err != nil {
+				log.Println("[ERROR] VALIDATE FAILED", err)
+				continue
+			}
+			id := rand.Text()
+			err = rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body)).Err()
+			if err != nil {
+				log.Println("[ERROR] COULD ADD REPORT TO VALKEY")
+				return fmt.Errorf("could not be added to valkey")
+			}
+			err = rdb.IncrBy(valkeyCtx, "stream::WarplanesInAir", int64(reporteSend.WarplanesInAir)).Err()
+			if err != nil {
+				log.Println("[ERROR] COULD NOT INCREMENT stream::WarplanesInAir", err)
+				return fmt.Errorf("could not increment stream::WarplanesInAir: %w", err)
+			}
+			err = rdb.IncrBy(valkeyCtx, "stream::WarshipsInWater", int64(reporteSend.WarshipsInWater)).Err()
+			if err != nil {
+				log.Println("[ERROR] COULD NOT INCREMENT stream::WarshipsInWater", err)
+				return fmt.Errorf("could not increment stream::WarshipsInWater: %w", err)
+			}
+
+			// Incrementar contador de reportes de España si el reporte es de España}
+			// Llevar contador de naves segun el pais
+			switch reporteSend.Country {
+			case "ESP":
+				rdb.Incr(valkeyCtx, "system::spainCount")
+				err = rdb.IncrBy(valkeyCtx, "ranking::spainAirplanes", int64(reporteSend.WarplanesInAir)).Err()
 				if err != nil {
-					log.Println("[ERROR] UNMARSHAL FAILED", err)
-					continue
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::spainAirplanes", err)
+					return fmt.Errorf("could not increment ranking::spainAirplanes: %w", err)
 				}
-				if err := reporteSend.Validate(); err != nil {
-					log.Println("[ERROR] VALIDATE FAILED", err)
-					continue
-				}
-				id := rand.Text()
-				rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body))
-				rdb.IncrBy(valkeyCtx, "stream::WarplanesInAir", int64(reporteSend.WarplanesInAir))
-				rdb.IncrBy(valkeyCtx, "stream::WarshipsInWater", int64(reporteSend.WarshipsInWater))
-				
-				// Incrementar contador de reportes de España si el reporte es de España}
-				// Llevar contador de naves segun el pais
-				switch reporteSend.Country{
-					case "ESP":
-						rdb.Incr(valkeyCtx, "system::spainCount")
-						rdb.IncrBy(valkeyCtx, "ranking::spainAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "ranking::spainBoats", int64(reporteSend.WarshipsInWater))
-					case "US":
-						rdb.IncrBy(valkeyCtx, "ranking::usAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "ranking::usBoats", int64(reporteSend.WarshipsInWater))
-					case "CHN":
-						rdb.IncrBy(valkeyCtx, "ranking::chinaAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "ranking::chinaBoats", int64(reporteSend.WarshipsInWater))
-					case "RUS":
-						rdb.IncrBy(valkeyCtx, "ranking::russiaAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "ranking::russiaBoats", int64(reporteSend.WarshipsInWater))
-					case "GTM":
-						rdb.IncrBy(valkeyCtx, "ranking::gtmAirplanes", int64(reporteSend.WarplanesInAir))
-						rdb.IncrBy(valkeyCtx, "ranking::gtmBoats", int64(reporteSend.WarshipsInWater))
-				}
-				// Obtener registros para resto de datos
-				reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
+				err = rdb.IncrBy(valkeyCtx, "ranking::spainBoats", int64(reporteSend.WarshipsInWater)).Err()
 				if err != nil {
-					log.Println("[ERROR] HGETALL FAILED", err)
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::spainBoats", err)
+					return fmt.Errorf("could not increment ranking::spainBoats: %w", err)
 				}
-				if len(reports) == 0 {
-					continue
+			case "USA":
+				err = rdb.IncrBy(valkeyCtx, "ranking::usAirplanes", int64(reporteSend.WarplanesInAir)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::usAirplanes", err)
+					return fmt.Errorf("could not increment ranking::usAirplanes: %w", err)
 				}
-				// Obtener registros de aviones y barcos reportados para calculo de la moda
-				modeAviones := getMode(reports, "aviones")
-				modeBarcos := getMode(reports, "barcos")
-				rdb.Set(valkeyCtx, "system::airplanesMode", modeAviones, 0)
-				rdb.Set(valkeyCtx, "system::shipsMode", modeBarcos, 0)
+				err = rdb.IncrBy(valkeyCtx, "ranking::usBoats", int64(reporteSend.WarshipsInWater)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::usBoats", err)
+					return fmt.Errorf("could not increment ranking::usBoats: %w", err)
+				}
+			case "CHN":
+				err = rdb.IncrBy(valkeyCtx, "ranking::chinaAirplanes", int64(reporteSend.WarplanesInAir)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::chinaAirplanes", err)
+					return fmt.Errorf("could not increment ranking::chinaAirplanes: %w", err)
+				}
+				err = rdb.IncrBy(valkeyCtx, "ranking::chinaBoats", int64(reporteSend.WarshipsInWater)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::chinaBoats", err)
+					return fmt.Errorf("could not increment ranking::chinaBoats: %w", err)
+				}
+			case "RUS":
+				err = rdb.IncrBy(valkeyCtx, "ranking::russiaAirplanes", int64(reporteSend.WarplanesInAir)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::russiaAirplanes", err)
+					return fmt.Errorf("could not increment ranking::russiaAirplanes: %w", err)
+				}
+				err = rdb.IncrBy(valkeyCtx, "ranking::russiaBoats", int64(reporteSend.WarshipsInWater)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::russiaBoats", err)
+					return fmt.Errorf("could not increment ranking::russiaBoats: %w", err)
+				}
+			case "GTM":
+				err = rdb.IncrBy(valkeyCtx, "ranking::gtmAirplanes", int64(reporteSend.WarplanesInAir)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::gtmAirplanes", err)
+					return fmt.Errorf("could not increment ranking::gtmAirplanes: %w", err)
+				}
+				err = rdb.IncrBy(valkeyCtx, "ranking::gtmBoats", int64(reporteSend.WarshipsInWater)).Err()
+				if err != nil {
+					log.Println("[ERROR] COULD NOT INCREMENT ranking::gtmBoats", err)
+					return fmt.Errorf("could not increment ranking::gtmBoats: %w", err)
+				}
+			}
+			// Obtener registros para resto de datos
+			reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
+			if err != nil {
+				log.Println("[ERROR] HGETALL FAILED", err)
+			}
+			if len(reports) == 0 {
+				continue
+			}
+			// Obtener registros de aviones y barcos reportados para calculo de la moda
+			modeAviones := getMode(reports, "aviones")
+			modeBarcos := getMode(reports, "barcos")
+			err = rdb.Set(valkeyCtx, "system::airplanesMode", modeAviones, 0).Err()
+			if err != nil {
+				log.Println("[ERROR] COULD NOT SET system::airplanesMode", err)
+				return fmt.Errorf("could not set system::airplanesMode: %w", err)
+			}
+			err = rdb.Set(valkeyCtx, "system::shipsMode", modeBarcos, 0).Err()
+			if err != nil {
+				log.Println("[ERROR] COULD NOT SET system::shipsMode", err)
+				return fmt.Errorf("could not set system::shipsMode: %w", err)
+			}
 
 		}
 	}
