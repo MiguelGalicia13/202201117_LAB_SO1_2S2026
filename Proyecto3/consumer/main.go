@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base32"
 	"encoding/json"
 
 	"fmt"
@@ -26,10 +24,8 @@ type rabbitSession struct {
 	returns    <-chan amqp.Return
 }
 
-
-
 func run() error {
-	url:= os.Getenv("RABBITMQ_URL")
+	url := os.Getenv("RABBITMQ_URL")
 	if url == "" {
 		log.Println("[ERROR] RABBITMQ_URL not set")
 		return fmt.Errorf("RABBITMQ_URL not set")
@@ -44,20 +40,20 @@ func run() error {
 		log.Println("[ERROR] VALKEY_URL not set")
 		return fmt.Errorf("VALKEY_URL not set")
 	}
-	opts,err:= redis.ParseURL(valkey_url)
-	if err != nil{
+	opts, err := redis.ParseURL(valkey_url)
+	if err != nil {
 		log.Println("[ERROR] INVALID URL")
 		return fmt.Errorf("invalid url")
 	}
 	var rdb = redis.NewClient(opts)
-	
+
 	defer rdb.Close()
 	rabbitCtx, cancelRabbit := context.WithCancel(context.Background())
 	defer cancelRabbit()
 	valkeyCtx, cancelValkey := context.WithCancel(context.Background())
 	defer cancelValkey()
 	session, err := connect(rabbitCtx, url, queueName)
-	if err != nil{
+	if err != nil {
 		log.Printf("[ERROR] COULD NOT CONNECT: %s ", err)
 		return err
 	}
@@ -78,8 +74,19 @@ func run() error {
 		log.Printf("[ERROR] COULD NOT CONSUME: %s", err)
 		return err
 	}
-	rdb.Set(valkeyCtx, "system::spainCount", 0,0 )
-	for{
+	rdb.Set(valkeyCtx, "system::spainCount", 0, 0)
+	rdb.Set(valkeyCtx, "stream::spainAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "stream::usAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "stream::russiaAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "stream::chinaAirplanes", 0, 0)
+	rdb.Set(valkeyCtx, "stream::gtmAirplanes", 0, 0)
+
+	rdb.Set(valkeyCtx, "stream::spainBoats", 0, 0)
+	rdb.Set(valkeyCtx, "stream::usBoats", 0, 0)
+	rdb.Set(valkeyCtx, "stream::russiaBoats", 0, 0)
+	rdb.Set(valkeyCtx, "stream::chinaBoats", 0, 0)
+	rdb.Set(valkeyCtx, "stream::gtmBoats", 0, 0)
+	for {
 		select {
 			case <- rabbitCtx.Done():
 				log.Println("[ERROR] RABBITMQ CONTEXT DONE")
@@ -90,9 +97,6 @@ func run() error {
 					return fmt.Errorf("DELIVERIES CHANNEL CLOSED")
 				}
 				log.Printf("[LOG] MESSAGE RECIEVED: %s", deliveriy.Body)
-
-
-
 				/*
 				 * Info que se puede obtener de esta key
 				 * Maximo cantidad de aviones reportados
@@ -112,9 +116,25 @@ func run() error {
 				}
 				id := rand.Text()
 				rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body))
-				// Incrementar contador de reportes de España si el reporte es de España
-				if reporteSend.Country == "ESP" {
-					rdb.Incr(valkeyCtx, "system::spainCount")
+				// Incrementar contador de reportes de España si el reporte es de España}
+				// Llevar contador de naves segun el pais
+				switch reporteSend.Country{
+					case "ESP":
+						rdb.Incr(valkeyCtx, "system::spainCount")
+						rdb.IncrBy(valkeyCtx, "stream::spainAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "stream::spainBoats", int64(reporteSend.WarshipsInWater))
+					case "US":
+						rdb.IncrBy(valkeyCtx, "stream::usAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "stream::usBoats", int64(reporteSend.WarshipsInWater))
+					case "CHN":
+						rdb.IncrBy(valkeyCtx, "stream::chinaAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "stream::chinaBoats", int64(reporteSend.WarshipsInWater))
+					case "RUS":
+						rdb.IncrBy(valkeyCtx, "stream::russiaAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "stream::russiaBoats", int64(reporteSend.WarshipsInWater))
+					case "GTM":
+						rdb.IncrBy(valkeyCtx, "stream::gtmAirplanes", int64(reporteSend.WarplanesInAir))
+						rdb.IncrBy(valkeyCtx, "stream::gtmBoats", int64(reporteSend.WarshipsInWater))
 				}
 				// Obtener registros para resto de datos
 				reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
@@ -129,16 +149,16 @@ func run() error {
 				modeBarcos := getMode(reports, "barcos")
 				rdb.Set(valkeyCtx, "system::airplanesMode", modeAviones, 0)
 				rdb.Set(valkeyCtx, "system::shipsMode", modeBarcos, 0)
-			
+
 		}
 	}
 }
 
-func getMode(reports map[string]string, key string) (float64) {
+func getMode(reports map[string]string, key string) float64 {
 	transport := make([]float64, 0, len(reports))
-	for content := range reports{
+	for content := range reports {
 		var read report.Report
-		err := json.Unmarshal([]byte(content),&read)
+		err := json.Unmarshal([]byte(content), &read)
 		if err != nil {
 			log.Println("[ERROR] UNMARSHAL FAILED", err)
 			continue
@@ -180,7 +200,7 @@ func connect(ctx context.Context, url, queue string) (*rabbitSession, error) {
 	if err == nil {
 		_, err = channel.QueueDeclare(queue, true, false, false, false, nil)
 	}
-	
+
 	if err != nil {
 		_ = socket.Close()
 		return nil, err
@@ -188,7 +208,7 @@ func connect(ctx context.Context, url, queue string) (*rabbitSession, error) {
 	return &rabbitSession{connection: connection, channel: channel, socket: socket}, nil
 }
 
-func main(){
+func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
