@@ -111,9 +111,7 @@ func run() error {
 				}
 				id := rand.Text()
 				rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body))
-				
-				// Obtener registros de aviones y barcos reportados para calculo de la moda
-				
+				// Obtener registros para resto de datos
 				reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
 				if err != nil {
 					log.Println("[ERROR] HGETALL FAILED", err)
@@ -121,29 +119,37 @@ func run() error {
 				if len(reports) == 0 {
 					continue
 				}
-				aviones := make([]float64, 0, len(reports))
-				barcos := make([]float64, 0, len(reports))
-				for content := range reports{
-					var read report.Report
-					err := json.Unmarshal([]byte(content),&read)
-					if err != nil {
-						log.Println("[ERROR] UNMARSHAL FAILED", err)
-						continue
-					}
-					aviones = append(aviones, float64(read.WarplanesInAir))
-					barcos = append(barcos, float64(read.WarshipsInWater))
-				}
-				modeAviones, _ := stat.Mode(aviones, nil)
-				modeBarcos, _ := stat.Mode(barcos, nil)
-
+				// Obtener registros de aviones y barcos reportados para calculo de la moda
+				modeAviones := getMode(reports, "aviones")
+				modeBarcos := getMode(reports, "barcos")
 				rdb.Set(valkeyCtx, "system::airplanesMode", modeAviones, 0)
 				rdb.Set(valkeyCtx, "system::shipsMode", modeBarcos, 0)
+				// Obtener Reportes recibidos de españa
+				contador :=
+				
 			
 		}
 	}
 }
 
-
+func getMode(reports map[string]string, key string) (float64) {
+	transport := make([]float64, 0, len(reports))
+	for content := range reports{
+		var read report.Report
+		err := json.Unmarshal([]byte(content),&read)
+		if err != nil {
+			log.Println("[ERROR] UNMARSHAL FAILED", err)
+			continue
+		}
+		if key == "aviones" {
+			transport = append(transport, float64(read.WarplanesInAir))
+		} else {
+			transport = append(transport, float64(read.WarshipsInWater))
+		}
+	}
+	mode, _ := stat.Mode(transport, nil)
+	return mode
+}
 
 func connect(ctx context.Context, url, queue string) (*rabbitSession, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
