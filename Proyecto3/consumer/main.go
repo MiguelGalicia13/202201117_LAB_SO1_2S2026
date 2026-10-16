@@ -78,6 +78,7 @@ func run() error {
 		log.Printf("[ERROR] COULD NOT CONSUME: %s", err)
 		return err
 	}
+	rdb.Set(valkeyCtx, "system::spainCount", 0,0 )
 	for{
 		select {
 			case <- rabbitCtx.Done():
@@ -111,6 +112,10 @@ func run() error {
 				}
 				id := rand.Text()
 				rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body))
+				// Incrementar contador de reportes de España si el reporte es de España
+				if reporteSend.Country == "ESP" {
+					rdb.Incr(valkeyCtx, "system::spainCount")
+				}
 				// Obtener registros para resto de datos
 				reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
 				if err != nil {
@@ -124,9 +129,6 @@ func run() error {
 				modeBarcos := getMode(reports, "barcos")
 				rdb.Set(valkeyCtx, "system::airplanesMode", modeAviones, 0)
 				rdb.Set(valkeyCtx, "system::shipsMode", modeBarcos, 0)
-				// Obtener Reportes recibidos de españa
-				contador :=
-				
 			
 		}
 	}
