@@ -74,21 +74,6 @@ func run() error {
 		log.Printf("[ERROR] COULD NOT CONSUME: %s", err)
 		return err
 	}
-	rdb.Set(valkeyCtx, "system::spainCount", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::spainAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::usAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::russiaAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::chinaAirplanes", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::gtmAirplanes", 0, 0)
-
-	rdb.Set(valkeyCtx, "ranking::spainBoats", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::usBoats", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::russiaBoats", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::chinaBoats", 0, 0)
-	rdb.Set(valkeyCtx, "ranking::gtmBoats", 0, 0)
-
-	rdb.Set(valkeyCtx, "stream::WarplanesInAir", 0, 0)
-	rdb.Set(valkeyCtx, "stream::WarshipsInWater", 0, 0)
 	for {
 		select {
 		case <-rabbitCtx.Done():
