@@ -1,15 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base32"
+	"encoding/json"
+
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"time"
 
+	"github.com/MiguelGalicia13/202201117_LAB_SO1_2S2026/Proyecto3/internals/report"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
-	"time"
+	"gonum.org/v1/gonum/stat"
 )
 
 type rabbitSession struct {
@@ -82,11 +89,32 @@ func run() error {
 					return fmt.Errorf("DELIVERIES CHANNEL CLOSED")
 				}
 				log.Printf("[LOG] MESSAGE RECIEVED: %s", deliveriy.Body)
+
+
+
 				/*
-				 * Decodificar el body
-				 * Guardar el reporte del body
-				 * Confirmar con delivery.Ack(false) si se guardo
+				 * Info que se puede obtener de esta key
+				 * Maximo cantidad de aviones reportados
+				 * Minima cantidad de aviones reportados
+				 * Maxima cantidad de barcos reportados
+				 * Minima cantidad de barcos reportados
 				 */
+				var reporteSend report.Report
+				err := json.Unmarshal(deliveriy.Body, &reporteSend)
+				if err != nil {
+					log.Println("[ERROR] UNMARSHAL FAILED", err)
+					continue
+				}
+				if err := reporteSend.Validate(); err != nil {
+					log.Println("[ERROR] VALIDATE FAILED", err)
+					continue
+				}
+				id := rand.Text()
+				rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body))
+
+				
+	
+
 		}
 	}
 }
