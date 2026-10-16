@@ -111,13 +111,38 @@ func run() error {
 				}
 				id := rand.Text()
 				rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body))
-
 				
-	
+				// Obtener registros de aviones y barcos reportados para calculo de la moda
+				
+				reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
+				if err != nil {
+					log.Println("[ERROR] HGETALL FAILED", err)
+				}
+				if len(reports) == 0 {
+					continue
+				}
+				aviones := make([]float64, 0, len(reports))
+				barcos := make([]float64, 0, len(reports))
+				for content := range reports{
+					var read report.Report
+					err := json.Unmarshal([]byte(content),&read)
+					if err != nil {
+						log.Println("[ERROR] UNMARSHAL FAILED", err)
+						continue
+					}
+					aviones = append(aviones, float64(read.WarplanesInAir))
+					barcos = append(barcos, float64(read.WarshipsInWater))
+				}
+				modeAviones, _ := stat.Mode(aviones, nil)
+				modeBarcos, _ := stat.Mode(barcos, nil)
 
+				rdb.Set(valkeyCtx, "system::airplanesMode", modeAviones, 0)
+				rdb.Set(valkeyCtx, "system::shipsMode", modeBarcos, 0)
+			
 		}
 	}
 }
+
 
 
 func connect(ctx context.Context, url, queue string) (*rabbitSession, error) {
