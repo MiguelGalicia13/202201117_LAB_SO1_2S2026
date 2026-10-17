@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 
 	"fmt"
@@ -102,7 +101,19 @@ func run() error {
 				log.Println("[ERROR] VALIDATE FAILED", err)
 				return fmt.Errorf("could not validate: %w", err)
 			}
-			id := rand.Text()
+			id := deliveriy.MessageId
+			if id == "" {
+				log.Println("[ERROR] ID IS EMPTY")
+				return fmt.Errorf("id is empty")
+			}
+			existe, err := rdb.HExists(valkeyCtx, "system::reports", id).Result()
+			if err != nil {
+    			return fmt.Errorf("no se pudo comprobar el UUID: %w", err)
+			}
+			if existe {
+				log.Println("[ERROR] UUID ALREADY EXISTS")
+				return fmt.Errorf("uuid already exists")
+			}
 			err = rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body)).Err()
 			if err != nil {
 				log.Println("[ERROR] COULD ADD REPORT TO VALKEY")
@@ -189,7 +200,7 @@ func run() error {
 				log.Println("[ERROR] HGETALL FAILED", err)
 			}
 			if len(reports) == 0 {
-				continue
+				return fmt.Errorf("el historial está vacío después de aplicar el reporte")
 			}
 			// Obtener registros de aviones y barcos reportados para calculo de la moda
 			modeAviones := getMode(reports, "aviones")
@@ -209,7 +220,7 @@ func run() error {
 				log.Println("[ERROR] COULD NOT ACK", err)
 				return fmt.Errorf("could not ack: %w", err)
 			}
-			
+
 		}
 	}
 }

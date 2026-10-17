@@ -63,3 +63,4 @@ rustc-ice-*.txt
 #Kubernetes
 *secrets.yml
 *_test.*
+!Proyecto3/consumer/transaction_test.go

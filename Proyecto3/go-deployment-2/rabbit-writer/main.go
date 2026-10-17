@@ -120,7 +120,8 @@ func (w *writer) publish(ctx context.Context, body []byte) error {
 	defer session.socket.SetWriteDeadline(time.Time{})
 	id, err := uuid.NewV7()
 	if err != nil {
-		log.Fatalf("Error al generar UUID v7: %v", err)
+		log.Printf("Error al generar UUID v7: %v", err)
+		return fmt.Errorf("could not generate UUID: %v",err)
 	}
 	confirmation, err := session.channel.PublishWithDeferredConfirmWithContext(
 		ctx, "", w.queue, true, false,
