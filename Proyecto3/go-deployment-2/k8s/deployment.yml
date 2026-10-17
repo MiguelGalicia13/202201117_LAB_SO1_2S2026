@@ -16,7 +16,7 @@ spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: grpc-server
-          image: 34.170.72.85.sslip.io/go-deployment-2:v1
+          image: 34.170.72.85.sslip.io/go-deployment-2:v2
           command: ["/app/grpc-server"]
           ports:
             - name: grpc
@@ -35,7 +35,7 @@ spec:
               port: grpc
             periodSeconds: 5
         - name: rabbit-writer
-          image: 34.170.72.85.sslip.io/go-deployment-2:v1
+          image: 34.170.72.85.sslip.io/go-deployment-2:v2
           command: ["/app/rabbit-writer"]
           env:
             - name: RABBITMQ_URL

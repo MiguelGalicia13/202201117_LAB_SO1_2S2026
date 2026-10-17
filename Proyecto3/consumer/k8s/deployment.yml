@@ -16,7 +16,7 @@ spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: consumer
-          image: 34.170.72.85.sslip.io/consumer:v1
+          image: 34.170.72.85.sslip.io/consumer:v2
           command: ["/app/consumer"]
           env:
             - name: RABBITMQ_URL
