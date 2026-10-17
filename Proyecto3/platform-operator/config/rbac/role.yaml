@@ -60,4 +60,35 @@ rules:
   - "serviceaccounts"
   - "services"
 
+##
+## Rules for monitoring.so1.local/v1alpha1, Kind: GrafanaInstance
+##
+- apiGroups:
+  - monitoring.so1.local
+  resources:
+  - grafanainstances
+  - grafanainstances/status
+  - grafanainstances/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- verbs:
+  - "*"
+  apiGroups:
+  - "apps"
+  resources:
+  - "deployments"
+- verbs:
+  - "*"
+  apiGroups:
+  - ""
+  resources:
+  - "serviceaccounts"
+  - "services"
+
 # +kubebuilder:scaffold:rules

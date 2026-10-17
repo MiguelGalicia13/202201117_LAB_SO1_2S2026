@@ -3,4 +3,5 @@
 # It should be run by config/default
 resources:
 - bases/cache.so1.local_valkeyinstances.yaml
+- bases/monitoring.so1.local_grafanainstances.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
