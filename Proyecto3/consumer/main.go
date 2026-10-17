@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"time"
+	"math"
 
 	"github.com/MiguelGalicia13/202201117_LAB_SO1_2S2026/Proyecto3/internals/report"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -106,98 +107,15 @@ func run() error {
 				log.Println("[ERROR] ID IS EMPTY")
 				return fmt.Errorf("id is empty")
 			}
-			existe, err := rdb.HExists(valkeyCtx, "system::reports", id).Result()
-			if err != nil {
-    			return fmt.Errorf("no se pudo comprobar el UUID: %w", err)
-			}
-			if existe {
-				log.Println("[ERROR] UUID ALREADY EXISTS")
-				return fmt.Errorf("uuid already exists")
-			}
-			err = rdb.HSet(valkeyCtx, "system::reports", id, string(deliveriy.Body)).Err()
-			if err != nil {
-				log.Println("[ERROR] COULD ADD REPORT TO VALKEY")
-				return fmt.Errorf("could not be added to valkey")
-			}
-			err = rdb.IncrBy(valkeyCtx, "stream::WarplanesInAir", int64(reporteSend.WarplanesInAir)).Err()
-			if err != nil {
-				log.Println("[ERROR] COULD NOT INCREMENT stream::WarplanesInAir", err)
-				return fmt.Errorf("could not increment stream::WarplanesInAir: %w", err)
-			}
-			err = rdb.IncrBy(valkeyCtx, "stream::WarshipsInWater", int64(reporteSend.WarshipsInWater)).Err()
-			if err != nil {
-				log.Println("[ERROR] COULD NOT INCREMENT stream::WarshipsInWater", err)
-				return fmt.Errorf("could not increment stream::WarshipsInWater: %w", err)
-			}
-
-			// Incrementar contador de reportes de España si el reporte es de España}
-			// Llevar contador de naves segun el pais
-			switch reporteSend.Country {
-			case "ESP":
-				err = rdb.Incr(valkeyCtx, "system::spainCount").Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT system::spainCount", err)
-					return fmt.Errorf("could not increment system::spainCount: %w", err)
-				}
-				err = rdb.IncrBy(valkeyCtx, "ranking::spainAirplanes", int64(reporteSend.WarplanesInAir)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::spainAirplanes", err)
-					return fmt.Errorf("could not increment ranking::spainAirplanes: %w", err)
-				}
-				err = rdb.IncrBy(valkeyCtx, "ranking::spainBoats", int64(reporteSend.WarshipsInWater)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::spainBoats", err)
-					return fmt.Errorf("could not increment ranking::spainBoats: %w", err)
-				}
-			case "USA":
-				err = rdb.IncrBy(valkeyCtx, "ranking::usAirplanes", int64(reporteSend.WarplanesInAir)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::usAirplanes", err)
-					return fmt.Errorf("could not increment ranking::usAirplanes: %w", err)
-				}
-				err = rdb.IncrBy(valkeyCtx, "ranking::usBoats", int64(reporteSend.WarshipsInWater)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::usBoats", err)
-					return fmt.Errorf("could not increment ranking::usBoats: %w", err)
-				}
-			case "CHN":
-				err = rdb.IncrBy(valkeyCtx, "ranking::chinaAirplanes", int64(reporteSend.WarplanesInAir)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::chinaAirplanes", err)
-					return fmt.Errorf("could not increment ranking::chinaAirplanes: %w", err)
-				}
-				err = rdb.IncrBy(valkeyCtx, "ranking::chinaBoats", int64(reporteSend.WarshipsInWater)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::chinaBoats", err)
-					return fmt.Errorf("could not increment ranking::chinaBoats: %w", err)
-				}
-			case "RUS":
-				err = rdb.IncrBy(valkeyCtx, "ranking::russiaAirplanes", int64(reporteSend.WarplanesInAir)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::russiaAirplanes", err)
-					return fmt.Errorf("could not increment ranking::russiaAirplanes: %w", err)
-				}
-				err = rdb.IncrBy(valkeyCtx, "ranking::russiaBoats", int64(reporteSend.WarshipsInWater)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::russiaBoats", err)
-					return fmt.Errorf("could not increment ranking::russiaBoats: %w", err)
-				}
-			case "GTM":
-				err = rdb.IncrBy(valkeyCtx, "ranking::gtmAirplanes", int64(reporteSend.WarplanesInAir)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::gtmAirplanes", err)
-					return fmt.Errorf("could not increment ranking::gtmAirplanes: %w", err)
-				}
-				err = rdb.IncrBy(valkeyCtx, "ranking::gtmBoats", int64(reporteSend.WarshipsInWater)).Err()
-				if err != nil {
-					log.Println("[ERROR] COULD NOT INCREMENT ranking::gtmBoats", err)
-					return fmt.Errorf("could not increment ranking::gtmBoats: %w", err)
-				}
+			err = applyReport(valkeyCtx, rdb, id,deliveriy.Body, reporteSend)
+			if err != nil{
+				return fmt.Errorf("Couldnt Apply the rerport: %w", err)
 			}
 			// Obtener registros para resto de datos
 			reports, err := rdb.HGetAll(valkeyCtx, "system::reports").Result()
 			if err != nil {
 				log.Println("[ERROR] HGETALL FAILED", err)
+				return fmt.Errorf("Couldnt read system::reports: %w", err)
 			}
 			if len(reports) == 0 {
 				return fmt.Errorf("el historial está vacío después de aplicar el reporte")
@@ -277,6 +195,76 @@ func connect(ctx context.Context, url, queue string) (*rabbitSession, error) {
 		return nil, err
 	}
 	return &rabbitSession{connection: connection, channel: channel, socket: socket}, nil
+}
+
+
+func applyReport(
+	ctx context.Context,
+	rdb *redis.Client,
+	id string,
+	body []byte,
+	reporteSend report.Report,
+) error {
+	paises := map[string]string{
+		"ESP": "spain",
+		"USA": "us",
+		"CHN": "china",
+		"RUS": "russia",
+		"GTM": "gtm",
+	}
+	pais, ok := paises[reporteSend.Country]
+	if !ok {
+		return fmt.Errorf("unknown country: %s", reporteSend.Country)
+	}
+	contadores := map[string]int64{
+		"stream::WarplanesInAir": int64(reporteSend.WarplanesInAir),
+		"stream::WarshipsInWater": int64(reporteSend.WarshipsInWater),
+		"ranking::"+pais+"Airplanes": int64(reporteSend.WarplanesInAir),
+		"ranking::"+pais+"Boats": int64(reporteSend.WarshipsInWater),
+	}
+	if reporteSend.Country == "ESP" {
+		contadores["system::spainCount"] = 1
+	}
+	keys := []string{"system::reports"}
+	for key := range contadores{
+		keys = append(keys, key)
+	}
+	for try := 0; try < 5; try++{
+		err := rdb.Watch(ctx, func(tx *redis.Tx)error{
+				exists, err := tx.HExists(ctx, "system::reports", id).Result()
+				if err != nil{
+					return err
+				}
+				if exists{
+					return nil
+				}
+				next := make(map[string]int64, len(contadores))
+				for key, contador := range contadores{
+					curr, err := tx.Get(ctx, key).Int64()
+					if err != nil && err != redis.Nil{
+						return fmt.Errorf("Key %s: %w", key, err)
+					}
+
+					if contador <0 || curr <0 || curr > math.MaxInt64-contador{
+						return fmt.Errorf("Key out of range: %s", key)
+					}
+					next[key] = curr + contador
+				}
+				_,err  = tx.TxPipelined(ctx, func(pipe redis.Pipeliner)error{
+					pipe.HSet(ctx, "system::reports",id,string(body))
+					for key, value := range next{
+						pipe.Set(ctx, key, value, 0)
+					}
+					return nil
+				})
+				return err
+			}, keys...)
+		if err == redis.TxFailedErr{
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("Couldnt apply report due to unkown circuntances")
 }
 
 func main() {
