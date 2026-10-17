@@ -1,0 +1,60 @@
+apiVersion: cache.so1.local/v1alpha1
+kind: ValkeyInstance
+metadata:
+  name: valkeyinstance-sample
+  namespace: proyecto3
+spec:
+  # Default values copied from <project_dir>/helm-charts/valkeyinstance/values.yaml
+  affinity: {}
+  autoscaling:
+    enabled: false
+    maxReplicas: 100
+    minReplicas: 1
+    targetCPUUtilizationPercentage: 80
+  fullnameOverride: ""
+  image:
+    pullPolicy: IfNotPresent
+    repository: 34.170.72.85.sslip.io/valkey
+    tag: "v1"
+  imagePullSecrets: []
+  ingress:
+    annotations: {}
+    className: ""
+    enabled: false
+    hosts:
+    - host: chart-example.local
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+    tls: []
+  livenessProbe:
+    tcpSocket:
+      port: 6379
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  nameOverride: ""
+  nodeSelector: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  readinessProbe:
+    tcpSocket:
+      port: 6379
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  replicaCount: 1
+  resources: {}
+  securityContext: {}
+  service:
+    port: 6379
+    type: ClusterIP
+  serviceAccount:
+    annotations: {}
+    automount: true
+    create: true
+    name: ""
+  tolerations: []
+  volumeMounts: []
+  volumes: []
+  
+  

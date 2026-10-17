@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "valkeyinstance.fullname" . }}-test-connection"
+  labels:
+    {{- include "valkeyinstance.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: ping
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      command: ["valkey-cli"]
+      args: ["-h", "{{ include "valkeyinstance.fullname" . }}", "-p", "{{ .Values.service.port }}", "ping"]
+  restartPolicy: Never
