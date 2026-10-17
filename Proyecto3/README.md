@@ -856,6 +856,213 @@ Queda pendiente revisar la configuración de datos de Actix de la imagen `api-ru
 
 
 ![](imgs/locust-charts.png)
+
+## Operator Helm y despliegue de Valkey
+
+El proyecto `platform-operator` utiliza Operator SDK con el plugin Helm para administrar
+Valkey mediante el recurso personalizado `ValkeyInstance`. La CRD registra este tipo
+en Kubernetes; cada instancia declara la configuración deseada y el Operator utiliza
+su chart para crear y mantener los recursos correspondientes. En esta etapa se
+implementó Valkey; el recurso independiente para Grafana queda pendiente.
+
+### Creación del proyecto y de la API
+
+Con `operator-sdk` y `helm` instalados, verificamos sus versiones y generamos el
+proyecto desde la raíz de `Proyecto3`:
+
+```bash
+operator-sdk version
+helm version --short
+mkdir platform-operator
+cd platform-operator
+operator-sdk init --plugins helm --domain so1.local
+operator-sdk create api --group cache --version v1alpha1 --kind ValkeyInstance
+```
+
+Estos comandos se ejecutan una sola vez al generar el proyecto. Para reproducir el
+despliegue desde este repositorio se utilizan los archivos ya versionados.
+`so1.local` identifica la API; no es la dirección del registry ni requiere un
+servidor DNS externo. El recurso resultante usa `cache.so1.local/v1alpha1`.
+
+Los archivos principales generados y adaptados son:
+
+- `platform-operator/config/crd/bases/cache.so1.local_valkeyinstances.yaml`: definición del tipo `ValkeyInstance`.
+- `platform-operator/config/samples/cache_v1alpha1_valkeyinstance.yaml`: instancia `valkeyinstance-sample` en `proyecto3`.
+- `platform-operator/helm-charts/valkeyinstance/`: chart de Valkey, con sus valores y plantillas.
+- `platform-operator/watches.yaml`: asociación entre el recurso observado y el chart.
+- `platform-operator/config/rbac/role.yaml`: permisos para administrar los recursos del chart.
+- `platform-operator/config/default/`: configuración de instalación del Operator en `platform-operator-system`.
+
+La asociación en `watches.yaml` quedó configurada así:
+
+```yaml
+- group: cache.so1.local
+  version: v1alpha1
+  kind: ValkeyInstance
+  chart: helm-charts/valkeyinstance
+```
+
+### Adaptación del chart y almacenamiento persistente
+
+El chart generado inicialmente contenía un Deployment de Nginx. Se adaptó para
+utilizar `34.170.72.85.sslip.io/valkey:v1`, el puerto TCP `6379` y una réplica, con
+autoscaling deshabilitado. Aumentar las réplicas de este StatefulSet no configura
+automáticamente replicación entre servidores Valkey.
+
+La plantilla `templates/statefulset.yaml` reemplaza al Deployment y referencia el
+Service headless mediante `serviceName`. Incluye `volumeClaimTemplates` dentro del
+`spec` principal, al mismo nivel que `template`, para solicitar un PVC por Pod.
+Los valores de almacenamiento se declaran en `values.yaml`:
+
+```yaml
+persistence:
+  size: 1Gi
+  accessModes:
+    - ReadWriteOnce
+```
+
+El volumen se llama `data` y se monta en `/data`. Valkey arranca con los argumentos
+`valkey-server --appendonly yes --appendfsync everysec --dir /data`. AOF registra
+las escrituras para reconstruir los datos al arrancar; la sincronización cada
+segundo puede perder aproximadamente el último segundo de escrituras ante una
+caída abrupta. El PVC conserva los archivos del servidor cuando se reemplaza el Pod.
+
+Se definieron dos Services en el puerto `6379`: `valkeyinstance-sample` es el
+ClusterIP para los clientes, mientras que `valkeyinstance-sample-headless`, con
+`clusterIP: None`, proporciona la identidad de red del StatefulSet. Sus selectores
+coinciden con las etiquetas de los Pods y su `targetPort: valkey` coincide con el
+nombre del puerto del contenedor.
+
+Las probes de liveness y readiness utilizan `tcpSocket` en `6379`, porque Valkey
+no es un servidor HTTP. El test de conexión del chart también se cambió de `wget`
+a `valkey-cli ping`. Se añadió `statefulsets` a la regla RBAC del grupo `apps` para
+que el Operator pueda administrarlos. Los PVC definidos por `volumeClaimTemplates`
+son creados por el controlador del StatefulSet.
+
+El `spec` del Custom Resource sobrescribe los valores predeterminados del chart.
+Por eso se actualizaron también su imagen, puerto y probes; cambiar únicamente
+`values.yaml` no elimina las configuraciones anteriores del recurso de ejemplo.
+
+### Validación de las plantillas
+
+Desde `Proyecto3/platform-operator` ejecutamos:
+
+```bash
+helm lint helm-charts/valkeyinstance
+helm template valkeyinstance-sample helm-charts/valkeyinstance --namespace proyecto3
+```
+
+`helm lint` comprueba el chart y `helm template` muestra el YAML generado sin
+aplicarlo al clúster. Durante la revisión se corrigieron un `end` sin bloque de
+apertura, la referencia al puerto del Service headless y la indentación de
+`volumeClaimTemplates`. También se verificó la generación usando el `spec` del
+recurso de ejemplo. El lint por sí solo no demuestra que los campos estén en el
+nivel correcto del recurso de Kubernetes ni que los contenedores puedan arrancar.
+
+### Construcción y publicación de la imagen del Operator
+
+El Dockerfile utiliza `quay.io/operator-framework/helm-operator:v1.42.3` como base
+y copia `watches.yaml` y `helm-charts` dentro de la imagen. Desde
+`Proyecto3/platform-operator` construimos y publicamos:
+
+```bash
+make docker-build IMG=34.170.72.85.sslip.io/platform-operator:v1
+make docker-push IMG=34.170.72.85.sslip.io/platform-operator:v1
+```
+
+Para comprobar las referencias publicadas se pueden consultar sus manifiestos:
+
+```bash
+docker manifest inspect 34.170.72.85.sslip.io/platform-operator:v1
+docker manifest inspect 34.170.72.85.sslip.io/valkey:v1
+```
+
+La imagen del Operator contiene el controlador y los charts; la imagen de Valkey
+se descarga por separado al crear su Pod. Si se modifica un chart empaquetado,
+hay que reconstruir y publicar una nueva versión del Operator para desplegarlo.
+
+### Instalación en GKE y creación de la instancia
+
+Antes de desplegar comprobamos el contexto, los nodos y el almacenamiento disponible:
+
+```bash
+kubectl config current-context
+kubectl get nodes
+kubectl get storageclass
+```
+
+El clúster utilizado es `cluster-p3-202201117` y la StorageClass predeterminada
+es `standard-rwo`. El chart no fija `storageClassName`, por lo que utiliza esa
+clase. Con Zot accesible y las imágenes publicadas, desde `platform-operator`
+instalamos el Operator:
+
+```bash
+make deploy IMG=34.170.72.85.sslip.io/platform-operator:v1
+kubectl rollout status deployment/platform-operator-controller-manager \
+  -n platform-operator-system --timeout=300s
+```
+
+`make deploy` aplica la CRD, los permisos y el Deployment del controlador. También
+actualiza `config/manager/kustomization.yaml` con la referencia de la imagen.
+El Operator se ejecuta en `platform-operator-system`; la instancia de Valkey se
+crea en `proyecto3` al aplicar el Custom Resource:
+
+```bash
+kubectl apply -f config/samples/cache_v1alpha1_valkeyinstance.yaml
+```
+
+No se aplica el StatefulSet manualmente: el Operator reconcilia el recurso
+`ValkeyInstance` utilizando el chart incluido en su imagen.
+
+Durante el primer despliegue, el Pod del Operator permaneció en `Pending`. Al
+consultar los eventos apareció `no nodes available to schedule pods` y
+`kubectl get nodes` no devolvió nodos. Los manifiestos ya estaban instalados,
+pero no había máquinas donde ejecutar los contenedores. El procedimiento para
+recuperar la infraestructura, desde la raíz de `Proyecto3`, es:
+
+```bash
+bash start_GCP.sh
+kubectl get nodes -w
+```
+
+El script aumenta `default-pool` a dos nodos y enciende la VM de Zot. Cuando los
+nodos aparecen como `Ready`, salimos de la vista con `Ctrl+C` y repetimos la
+comprobación del rollout. No es necesario repetir `make deploy` solo porque el
+Pod estuviera esperando un nodo. Este arranque vuelve a activar recursos
+facturables de GCP.
+
+### Comprobación del despliegue de Valkey
+
+Consultamos la instancia y sus recursos con:
+
+```bash
+kubectl get valkeyinstances -n proyecto3
+kubectl get statefulsets,pods,services,pvc \
+  -n proyecto3 \
+  -l app.kubernetes.io/instance=valkeyinstance-sample
+kubectl rollout status statefulset/valkeyinstance-sample \
+  -n proyecto3 --timeout=180s
+kubectl exec -n proyecto3 valkeyinstance-sample-0 -- valkey-cli ping
+```
+
+La captura registra el StatefulSet `valkeyinstance-sample` con `READY 1/1`, el
+Pod `valkeyinstance-sample-0` en `Running` con `1/1` contenedores listos, ambos
+Services en `6379/TCP` y el PVC `data-valkeyinstance-sample-0` en `Bound`, con
+capacidad de `1Gi`, acceso `RWO` y StorageClass `standard-rwo`. El rollout
+terminó y `valkey-cli ping` respondió `PONG`.
+
+![Comprobación del StatefulSet, Services, PVC y respuesta PONG de Valkey](imgs/Valkey-Operator.png)
+
+Esta evidencia confirma el despliegue y la respuesta local de Valkey. Quedan
+pendientes comprobar la escritura desde el Consumer, la conservación de datos
+tras reemplazar el Pod y el despliegue de Grafana mediante su propio recurso
+personalizado. Las probes TCP y el comando `PING` no verifican esas operaciones.
+
+Referencias: [Helm Operator de Operator SDK](https://sdk.operatorframework.io/docs/building-operators/helm/tutorial/),
+[StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
+y [persistencia de Valkey](https://valkey.io/topics/persistence/).
+
+![](imgs/Consumer-log.png)
 # Recursos
 
 https://www.youtube.com/watch?v=7s5X7GoYj8k
