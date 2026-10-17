@@ -381,6 +381,76 @@ Los manifiestos y la publicación de la imagen en Zot quedan pendientes.
 Referencias: [cliente AMQP para Go](https://pkg.go.dev/github.com/rabbitmq/amqp091-go)
 y [publisher confirms de RabbitMQ](https://www.rabbitmq.com/docs/confirms).
 
+### Consumer: procesamiento de reportes y almacenamiento en Valkey
+
+El programa `consumer/main.go` consume los reportes publicados en RabbitMQ,
+guarda su historial en Valkey y mantiene los totales, rankings por país y modas
+de aviones y barcos. Utiliza el cliente `go-redis` para conectarse a Valkey y
+`gonum/stat` para calcular las modas.
+
+#### Configuración y conexión
+
+El consumidor requiere estas variables de entorno; si falta alguna, termina con error:
+
+- `RABBITMQ_URL`: URL AMQP para conectarse al broker.
+- `RABBITMQ_QUEUE`: nombre de la cola que se consumirá, sin valor predeterminado.
+- `VALKEY_URL`: URL de conexión a Valkey, interpretada con `redis.ParseURL`.
+
+La función `connect` establece la conexión AMQP con un tiempo límite de tres
+segundos, configura un heartbeat de cinco segundos y declara la cola como
+durable, no exclusiva y sin borrado automático. Antes de procesar mensajes,
+el consumidor comprueba Valkey mediante `PING` y configura `Qos(1, 0, false)`:
+recibe como máximo un mensaje sin confirmar a la vez por consumidor. El ACK es manual.
+
+#### Procesamiento y actualización transaccional
+
+Por cada mensaje, el consumidor deserializa el JSON en `report.Report`, ejecuta
+su validación y exige que `MessageId` no esté vacío. Ese identificador se usa
+como campo del hash `system::reports`, cuyo valor es el cuerpo JSON original.
+
+La función `applyReport` mantiene los siguientes acumulados:
+
+- `stream::WarplanesInAir` y `stream::WarshipsInWater`: sumas generales de aviones y barcos reportados.
+- `ranking::<pais>Airplanes` y `ranking::<pais>Boats`: sumas por país, usando
+  `spain`, `us`, `china`, `russia` o `gtm` para `ESP`, `USA`, `CHN`, `RUS` y `GTM`.
+- `system::spainCount`: cantidad de reportes de España; aumenta en uno por cada reporte nuevo de `ESP`.
+
+Para evitar aplicar el reporte solo parcialmente o sumarlo otra vez en una
+reentrega, `applyReport` sigue este orden:
+
+1. Construye los incrementos correspondientes al reporte y usa `Watch` sobre
+   `system::reports` y las claves de todos los contadores afectados.
+2. Comprueba el identificador con `tx.HExists`. Si ya existe, retorna sin
+   repetir las escrituras; el flujo continúa con las modas y el ACK.
+3. Lee los contadores con `tx.Get(...).Int64()`. Los ausentes se consideran
+   cero; los tipos o valores no convertibles a `int64` producen un error.
+   También rechaza cantidades negativas y sumas que desborden `int64`.
+4. Calcula los nuevos valores y ejecuta `tx.TxPipelined`, agrupando el `HSet`
+   del reporte y los `Set` de los contadores, sin expiración. No usa `IncrBy`
+   en esta versión: guarda las sumas calculadas bajo la protección de `Watch`.
+5. Si una clave observada cambia antes de confirmar la transacción, recibe
+   `redis.TxFailedErr` y repite la operación, hasta un máximo de cinco intentos.
+   Los demás errores se propagan sin continuar con el ACK.
+
+La validación previa es necesaria porque las transacciones de Valkey no
+revierten automáticamente otras escrituras si un comando falla durante su ejecución.
+
+#### Modas y confirmación del mensaje
+
+Después de aplicar el reporte, incluso si era una reentrega ya registrada,
+el consumidor lee el historial completo con `HGetAll`. La función `getMode`
+extrae las cantidades de cada JSON y usa `stat.Mode` para obtener el valor más
+frecuente de aviones y de barcos. Los resultados se guardan, sin expiración,
+en `system::airplanesMode` y `system::shipsMode`. Estos valores son modas de
+los reportes individuales, no de los totales acumulados por país.
+
+Solo después de completar estas operaciones se ejecuta `Ack(false)`, que
+confirma únicamente ese mensaje. Si el procesamiento falla antes del ACK,
+el programa termina y cierra la conexión; el mensaje sin confirmar queda
+sujeto a reentrega por RabbitMQ. El consumidor no implementa reconexión automática:
+necesita que se vuelva a iniciar. En una reentrega, conservar el mismo
+`MessageId` permite evitar que se repitan los acumulados.
+
 ## Generación de tráfico con Locust
 
 El cliente `locust/locustfile.py` envía reportes mediante `POST /grpc-202201117`.
@@ -768,7 +838,7 @@ uv run --project locust --locked locust -f locust/locustfile.py \
   --run-time 60s --stop-timeout 10 --csv locust/results/gke-baseline
 ```
 
-Las solicitudes fallidas, latencias, mensajes en RabbitMQ y cambios de réplicas deben registrarse como evidencia. La comparación de 1 y 2 réplicas Go necesita demostrar distribución real de llamadas gRPC; tener dos Pods Ready no basta. Esta primera fase llega hasta RabbitMQ; Consumer, Operator, Valkey y Grafana continúan pendientes de implementación.
+Las solicitudes fallidas, latencias, mensajes en RabbitMQ y cambios de réplicas deben registrarse como evidencia. La comparación de 1 y 2 réplicas Go necesita demostrar distribución real de llamadas gRPC; tener dos Pods Ready no basta. Esta validación de la primera fase llega hasta RabbitMQ y no cubre el Consumer, Operator, Valkey ni Grafana.
 
 #### Resultado de aplicación y comprobaciones
 
