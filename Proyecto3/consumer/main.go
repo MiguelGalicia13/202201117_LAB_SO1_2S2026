@@ -84,7 +84,7 @@ func run() error {
 				log.Println("[ERROR] DELIVERIES CHANNEL CLOSED")
 				return fmt.Errorf("DELIVERIES CHANNEL CLOSED")
 			}
-			log.Printf("[LOG] MESSAGE RECIEVED: %s", deliveriy.Body)
+			log.Printf("[LOG] MESSAGE RECIEVED: %s, id: %s", deliveriy.Body, deliveriy.MessageId)
 			/*
 			 * Info que se puede obtener de esta key
 			 * Maximo cantidad de aviones reportados

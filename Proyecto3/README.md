@@ -651,6 +651,88 @@ kubectl get deployments -n proyecto3
 
 ![](imgs/deployments.png)
 
+### Consulta de logs
+
+Los logs muestran lo que cada aplicación escribe en la salida estándar y de
+errores de su contenedor. Los siguientes comandos muestran hasta 100 líneas de
+los últimos 5 minutos y siguen mostrando los nuevos mensajes con `-f`. Ejecuta
+cada comando en una terminal distinta o termina la consulta con `Ctrl+C` antes
+de ejecutar el siguiente; esto no detiene el servicio.
+
+Para la API de Rust, incluyendo todas sus réplicas:
+
+```bash
+kubectl logs -n proyecto3 deployment/api-rust \
+  --all-pods=true --since=5m --tail=100 -f
+```
+
+Para los dos contenedores de Go Deployment 1 (`rest-receiver` y `grpc-client`):
+
+```bash
+kubectl logs -n proyecto3 deployment/go-deployment-1 \
+  --all-pods=true --all-containers=true --since=5m --tail=100 -f
+```
+
+Para los dos contenedores de Go Deployment 2 (`grpc-server` y `rabbit-writer`):
+
+```bash
+kubectl logs -n proyecto3 deployment/go-deployment-2 \
+  --all-pods=true --all-containers=true --since=5m --tail=100 -f
+```
+
+Para el Consumer:
+
+```bash
+kubectl logs -n proyecto3 deployment/rabbitmq-consumer \
+  --all-pods=true --since=5m --tail=100 -f
+```
+
+Para Grafana:
+
+```bash
+kubectl logs -n proyecto3 deployment/grafanainstance-sample \
+  --all-pods=true --since=5m --tail=100 -f
+```
+
+Para el Operator, que está en un namespace diferente:
+
+```bash
+kubectl logs -n platform-operator-system \
+  deployment/platform-operator-controller-manager -c manager \
+  --all-pods=true --since=5m --tail=100 -f
+```
+
+`--all-pods=true` consulta los Pods actuales del Deployment y añade el nombre
+del Pod y del contenedor a cada línea. `--all-containers=true` incluye ambos
+contenedores de los servicios Go. Para consultar solamente uno, sustituye esa
+opción por `-c rest-receiver`, `-c grpc-client`, `-c grpc-server` o
+`-c rabbit-writer`, según el Deployment correspondiente. Si hay más de cinco
+flujos simultáneos, aumenta el límite con `--max-log-requests=10` o el valor
+necesario. Si aparecen nuevos Pods durante la consulta, vuelve a ejecutar el
+comando para incluirlos.
+
+RabbitMQ y Valkey son StatefulSets; sus logs se consultan de la misma manera:
+
+```bash
+kubectl logs -n proyecto3 statefulset/rabbitmq --since=5m --tail=100 -f
+kubectl logs -n proyecto3 statefulset/valkeyinstance-sample --since=5m --tail=100 -f
+```
+
+Si un contenedor se reinicia, usa el nombre exacto del Pod y `--previous` para
+consultar su ejecución anterior, siempre que esos logs sigan disponibles:
+
+```bash
+kubectl get pods -n proyecto3
+kubectl logs -n proyecto3 POD -c CONTENEDOR --previous --tail=100
+```
+
+Sustituye `POD` y `CONTENEDOR` por los nombres reales. Si un contenedor todavía
+no ha arrancado, por ejemplo por `ImagePullBackOff`, no tendrá logs de la
+aplicación. Consulta sus eventos con `kubectl describe pod POD -n proyecto3`.
+La ausencia de líneas también puede significar que no hubo actividad reciente
+o que la aplicación no registra esa operación; puedes ampliar `--since=5m` o
+eliminar esa opción para consultar logs más antiguos que sigan disponibles.
+
 ### Preparación de Gateway API
 
 Los manifiestos siguientes se aplicaron uno por uno después de habilitar Gateway API. Los comandos de esta sección permiten reproducir el despliegue desde la carpeta `Proyecto3`. Primero verificamos el contexto del clúster:
@@ -856,7 +938,492 @@ Queda pendiente revisar la configuración de datos de Actix de la imagen `api-ru
 
 
 ![](imgs/locust-charts.png)
+
+## Operator Helm y despliegue de Valkey
+
+El proyecto `platform-operator` utiliza Operator SDK con el plugin Helm para administrar
+Valkey mediante el recurso personalizado `ValkeyInstance`. La CRD registra este tipo
+en Kubernetes; cada instancia declara la configuración deseada y el Operator utiliza
+su chart para crear y mantener los recursos correspondientes. Esta sección
+documenta la primera etapa con Valkey; posteriormente se añadió el recurso
+independiente `GrafanaInstance`, descrito en la siguiente sección.
+
+### Creación del proyecto y de la API
+
+Con `operator-sdk` y `helm` instalados, verificamos sus versiones y generamos el
+proyecto desde la raíz de `Proyecto3`:
+
+```bash
+operator-sdk version
+helm version --short
+mkdir platform-operator
+cd platform-operator
+operator-sdk init --plugins helm --domain so1.local
+operator-sdk create api --group cache --version v1alpha1 --kind ValkeyInstance
+```
+
+Estos comandos se ejecutan una sola vez al generar el proyecto. Para reproducir el
+despliegue desde este repositorio se utilizan los archivos ya versionados.
+`so1.local` identifica la API; no es la dirección del registry ni requiere un
+servidor DNS externo. El recurso resultante usa `cache.so1.local/v1alpha1`.
+
+Los archivos principales generados y adaptados son:
+
+- `platform-operator/config/crd/bases/cache.so1.local_valkeyinstances.yaml`: definición del tipo `ValkeyInstance`.
+- `platform-operator/config/samples/cache_v1alpha1_valkeyinstance.yaml`: instancia `valkeyinstance-sample` en `proyecto3`.
+- `platform-operator/helm-charts/valkeyinstance/`: chart de Valkey, con sus valores y plantillas.
+- `platform-operator/watches.yaml`: asociación entre el recurso observado y el chart.
+- `platform-operator/config/rbac/role.yaml`: permisos para administrar los recursos del chart.
+- `platform-operator/config/default/`: configuración de instalación del Operator en `platform-operator-system`.
+
+La asociación en `watches.yaml` quedó configurada así:
+
+```yaml
+- group: cache.so1.local
+  version: v1alpha1
+  kind: ValkeyInstance
+  chart: helm-charts/valkeyinstance
+```
+
+### Adaptación del chart y almacenamiento persistente
+
+El chart generado inicialmente contenía un Deployment de Nginx. Se adaptó para
+utilizar `34.170.72.85.sslip.io/valkey:v1`, el puerto TCP `6379` y una réplica, con
+autoscaling deshabilitado. Aumentar las réplicas de este StatefulSet no configura
+automáticamente replicación entre servidores Valkey.
+
+La plantilla `templates/statefulset.yaml` reemplaza al Deployment y referencia el
+Service headless mediante `serviceName`. Incluye `volumeClaimTemplates` dentro del
+`spec` principal, al mismo nivel que `template`, para solicitar un PVC por Pod.
+Los valores de almacenamiento se declaran en `values.yaml`:
+
+```yaml
+persistence:
+  size: 1Gi
+  accessModes:
+    - ReadWriteOnce
+```
+
+El volumen se llama `data` y se monta en `/data`. Valkey arranca con los argumentos
+`valkey-server --appendonly yes --appendfsync everysec --dir /data`. AOF registra
+las escrituras para reconstruir los datos al arrancar; la sincronización cada
+segundo puede perder aproximadamente el último segundo de escrituras ante una
+caída abrupta. El PVC conserva los archivos del servidor cuando se reemplaza el Pod.
+
+Se definieron dos Services en el puerto `6379`: `valkeyinstance-sample` es el
+ClusterIP para los clientes, mientras que `valkeyinstance-sample-headless`, con
+`clusterIP: None`, proporciona la identidad de red del StatefulSet. Sus selectores
+coinciden con las etiquetas de los Pods y su `targetPort: valkey` coincide con el
+nombre del puerto del contenedor.
+
+Las probes de liveness y readiness utilizan `tcpSocket` en `6379`, porque Valkey
+no es un servidor HTTP. El test de conexión del chart también se cambió de `wget`
+a `valkey-cli ping`. Se añadió `statefulsets` a la regla RBAC del grupo `apps` para
+que el Operator pueda administrarlos. Los PVC definidos por `volumeClaimTemplates`
+son creados por el controlador del StatefulSet.
+
+El `spec` del Custom Resource sobrescribe los valores predeterminados del chart.
+Por eso se actualizaron también su imagen, puerto y probes; cambiar únicamente
+`values.yaml` no elimina las configuraciones anteriores del recurso de ejemplo.
+
+### Validación de las plantillas
+
+Desde `Proyecto3/platform-operator` ejecutamos:
+
+```bash
+helm lint helm-charts/valkeyinstance
+helm template valkeyinstance-sample helm-charts/valkeyinstance --namespace proyecto3
+```
+
+`helm lint` comprueba el chart y `helm template` muestra el YAML generado sin
+aplicarlo al clúster. Durante la revisión se corrigieron un `end` sin bloque de
+apertura, la referencia al puerto del Service headless y la indentación de
+`volumeClaimTemplates`. También se verificó la generación usando el `spec` del
+recurso de ejemplo. El lint por sí solo no demuestra que los campos estén en el
+nivel correcto del recurso de Kubernetes ni que los contenedores puedan arrancar.
+
+### Construcción y publicación de la imagen del Operator
+
+El Dockerfile utiliza `quay.io/operator-framework/helm-operator:v1.42.3` como base
+y copia `watches.yaml` y `helm-charts` dentro de la imagen. Desde
+`Proyecto3/platform-operator` construimos y publicamos:
+
+```bash
+make docker-build IMG=34.170.72.85.sslip.io/platform-operator:v1
+make docker-push IMG=34.170.72.85.sslip.io/platform-operator:v1
+```
+
+Para comprobar las referencias publicadas se pueden consultar sus manifiestos:
+
+```bash
+docker manifest inspect 34.170.72.85.sslip.io/platform-operator:v1
+docker manifest inspect 34.170.72.85.sslip.io/valkey:v1
+```
+
+La imagen del Operator contiene el controlador y los charts; la imagen de Valkey
+se descarga por separado al crear su Pod. Si se modifica un chart empaquetado,
+hay que reconstruir y publicar una nueva versión del Operator para desplegarlo.
+
+### Instalación en GKE y creación de la instancia
+
+Antes de desplegar comprobamos el contexto, los nodos y el almacenamiento disponible:
+
+```bash
+kubectl config current-context
+kubectl get nodes
+kubectl get storageclass
+```
+
+El clúster utilizado es `cluster-p3-202201117` y la StorageClass predeterminada
+es `standard-rwo`. El chart no fija `storageClassName`, por lo que utiliza esa
+clase. Con Zot accesible y las imágenes publicadas, desde `platform-operator`
+instalamos el Operator:
+
+```bash
+make deploy IMG=34.170.72.85.sslip.io/platform-operator:v1
+kubectl rollout status deployment/platform-operator-controller-manager \
+  -n platform-operator-system --timeout=300s
+```
+
+`make deploy` aplica la CRD, los permisos y el Deployment del controlador. También
+actualiza `config/manager/kustomization.yaml` con la referencia de la imagen.
+El Operator se ejecuta en `platform-operator-system`; la instancia de Valkey se
+crea en `proyecto3` al aplicar el Custom Resource:
+
+```bash
+kubectl apply -f config/samples/cache_v1alpha1_valkeyinstance.yaml
+```
+
+No se aplica el StatefulSet manualmente: el Operator reconcilia el recurso
+`ValkeyInstance` utilizando el chart incluido en su imagen.
+
+Durante el primer despliegue, el Pod del Operator permaneció en `Pending`. Al
+consultar los eventos apareció `no nodes available to schedule pods` y
+`kubectl get nodes` no devolvió nodos. Los manifiestos ya estaban instalados,
+pero no había máquinas donde ejecutar los contenedores. El procedimiento para
+recuperar la infraestructura, desde la raíz de `Proyecto3`, es:
+
+```bash
+bash start_GCP.sh
+kubectl get nodes -w
+```
+
+El script aumenta `default-pool` a dos nodos y enciende la VM de Zot. Cuando los
+nodos aparecen como `Ready`, salimos de la vista con `Ctrl+C` y repetimos la
+comprobación del rollout. No es necesario repetir `make deploy` solo porque el
+Pod estuviera esperando un nodo. Este arranque vuelve a activar recursos
+facturables de GCP.
+
+### Comprobación del despliegue de Valkey
+
+Consultamos la instancia y sus recursos con:
+
+```bash
+kubectl get valkeyinstances -n proyecto3
+kubectl get statefulsets,pods,services,pvc \
+  -n proyecto3 \
+  -l app.kubernetes.io/instance=valkeyinstance-sample
+kubectl rollout status statefulset/valkeyinstance-sample \
+  -n proyecto3 --timeout=180s
+kubectl exec -n proyecto3 valkeyinstance-sample-0 -- valkey-cli ping
+```
+
+La captura registra el StatefulSet `valkeyinstance-sample` con `READY 1/1`, el
+Pod `valkeyinstance-sample-0` en `Running` con `1/1` contenedores listos, ambos
+Services en `6379/TCP` y el PVC `data-valkeyinstance-sample-0` en `Bound`, con
+capacidad de `1Gi`, acceso `RWO` y StorageClass `standard-rwo`. El rollout
+terminó y `valkey-cli ping` respondió `PONG`.
+
+![Comprobación del StatefulSet, Services, PVC y respuesta PONG de Valkey](imgs/Valkey-Operator.png)
+
+Esta evidencia confirma el despliegue y la respuesta local de Valkey. Las probes
+TCP y el comando `PING` no comprueban la escritura desde el Consumer ni la
+conservación de datos tras reemplazar el Pod. La siguiente captura registra el
+procesamiento del Consumer y la sección de Grafana documenta la etapa posterior;
+la prueba de persistencia tras reemplazar el Pod continúa pendiente.
+
+Referencias: [Helm Operator de Operator SDK](https://sdk.operatorframework.io/docs/building-operators/helm/tutorial/),
+[StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
+y [persistencia de Valkey](https://valkey.io/topics/persistence/).
+
+![](imgs/Consumer-log.png)
+
+## Operator Helm y despliegue de Grafana
+
+Se amplió el mismo proyecto `platform-operator` para administrar Grafana mediante
+`GrafanaInstance`, conservando `ValkeyInstance` y su chart. Cada recurso tiene su
+propia API y configuración; ambos son reconciliados por el mismo Operator.
+Los comandos de esta sección se ejecutan desde `Proyecto3/platform-operator`,
+salvo donde se indique otra ubicación.
+
+### Habilitación de múltiples grupos y creación de la API
+
+Al intentar crear el grupo `monitoring`, Operator SDK indicó que el proyecto no
+permitía múltiples grupos. Se añadió esta propiedad en la raíz de `PROJECT`:
+
+```yaml
+multigroup: true
+```
+
+Después generamos la API y el chart inicial:
+
+```bash
+operator-sdk create api --group monitoring --version v1alpha1 --kind GrafanaInstance
+```
+
+Este comando corresponde a la creación inicial; no es necesario repetirlo al
+desplegar los archivos que ya están en el repositorio. Se generaron la CRD
+`config/crd/bases/monitoring.so1.local_grafanainstances.yaml`, el recurso de
+ejemplo `config/samples/monitoring_v1alpha1_grafanainstance.yaml` y el chart
+`helm-charts/grafanainstance/`. En `watches.yaml` quedó esta asociación, además
+de la existente para Valkey:
+
+```yaml
+- group: monitoring.so1.local
+  version: v1alpha1
+  kind: GrafanaInstance
+  chart: helm-charts/grafanainstance
+```
+
+La CRD también está incluida en `config/crd/kustomization.yaml`. Se revisó el
+RBAC del controlador para administrar el recurso personalizado y los objetos
+del chart. En `config/rbac/role.yaml` se añadió `persistentvolumeclaims` a la
+regla del grupo principal que ya permite administrar Services y ServiceAccounts.
+Ese permiso sirve al Operator completo, aunque aparezca junto a las reglas de
+Valkey.
+
+### Adaptación del chart de Grafana
+
+El chart inicial se adaptó para utilizar la imagen
+`34.170.72.85.sslip.io/grafana:v1`. En `values.yaml` se configuraron una réplica,
+autoscaling deshabilitado, un Service `ClusterIP` en el puerto `3000`,
+`podSecurityContext.fsGroup: 472` y el almacenamiento:
+
+```yaml
+persistence:
+  size: 1Gi
+  accessModes:
+    - ReadWriteOnce
+```
+
+La plantilla `templates/pvc.yml` crea el PVC
+`grafanainstance-sample-data`. El Deployment lo referencia mediante un volumen
+llamado `grafana-data`, montado en `/var/lib/grafana`. Ahí Grafana conserva su
+base de datos SQLite, usuarios, dashboards y configuración almacenada por la
+aplicación. `fsGroup: 472` facilita el acceso del proceso al volumen.
+
+Se utilizó `strategy.type: Recreate` para detener el Pod anterior antes de crear
+su reemplazo y evitar que dos instancias escriban a la vez en la misma base de
+datos. El puerto del contenedor se llama `http` y usa `containerPort: 3000`;
+el Service lo referencia con `targetPort: http`.
+
+Las probes HTTP consultan `/api/health`: readiness empieza después de 10 segundos
+y se repite cada 5; liveness empieza después de 30 segundos y se repite cada 10.
+Durante la revisión se corrigió una declaración duplicada de `replicas` y la
+indentación del segundo elemento de `env` antes de construir la imagen.
+
+### Credenciales mediante el Secret existente
+
+Se añadieron las claves `grafana-user` y `grafana-passwd` al Secret
+`rabbitmq-credentials`, definido en `k8s/03-secrets.yml`, en el namespace
+`proyecto3`. Se reutilizó el Secret existente conservando sus demás claves.
+Los valores reales se mantienen fuera del repositorio; no se incluyen en el
+chart ni en el Custom Resource.
+
+El contenedor recibe esas claves mediante `secretKeyRef`:
+
+```yaml
+env:
+  - name: GF_SECURITY_ADMIN_USER
+    valueFrom:
+      secretKeyRef:
+        name: rabbitmq-credentials
+        key: grafana-user
+  - name: GF_SECURITY_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: rabbitmq-credentials
+        key: grafana-passwd
+```
+
+Para actualizar el Secret antes de arrancar Grafana ejecutamos:
+
+```bash
+kubectl apply -f ../k8s/03-secrets.yml
+```
+
+Estas variables inicializan el administrador en el primer arranque. Si la base
+de datos ya existe en el PVC, cambiar el Secret y reiniciar el Pod no restablece
+automáticamente la contraseña del usuario existente.
+
+### Validación de las plantillas
+
+Antes de publicar el Operator comprobamos ambos charts:
+
+```bash
+helm lint helm-charts/grafanainstance
+helm template grafanainstance-sample helm-charts/grafanainstance --namespace proyecto3
+helm lint helm-charts/valkeyinstance
+```
+
+Se verificaron la réplica única, la estrategia `Recreate`, el puerto `3000`, las
+probes, los selectores y la coincidencia entre el nombre del PVC y su referencia
+en el Deployment. El aviso `Chart.yaml: icon is recommended` es informativo.
+Estas comprobaciones renderizan el chart localmente, sin desplegarlo ni demostrar
+que la imagen pueda descargarse.
+
+### Publicación de Grafana en Zot y solución de manifest invalid
+
+El primer intento de publicar Grafana con `docker push` terminó con
+`error from registry: manifest invalid`. Aunque las capas se habían subido y el
+repositorio aparecía en Zot, no existía una etiqueta `v1` válida. Por eso el Pod
+permaneció en `ErrImagePull` y después en `ImagePullBackOff`.
+
+Los logs de Zot mostraron que el `PUT /v2/grafana/manifests/v1` recibía HTTP `415`
+con el tipo `application/vnd.docker.distribution.manifest.v2+json`. Publicar con
+`docker push --platform=linux/amd64` tampoco resolvió el problema: limitaba la
+arquitectura, pero seguía enviando el formato Docker rechazado por el registry.
+
+Se publicó la misma imagen como OCI usando Skopeo en un contenedor temporal,
+sin instalar paquetes en el equipo ni cambiar la configuración de Zot. El digest
+de origen fija la imagen utilizada durante esta publicación:
+
+```bash
+docker run --rm quay.io/skopeo/stable:latest \
+  --override-os linux --override-arch amd64 \
+  copy --format oci \
+  docker://grafana/grafana@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f \
+  docker://34.170.72.85.sslip.io/grafana:v1
+```
+
+Se comprobó que Zot devolviera la etiqueta `v1`, HTTP `200` para su manifiesto
+y `application/vnd.oci.image.manifest.v1+json`. El digest resultante fue
+`sha256:81cf59d580caa72fdd541d2205caf0378f3ff275d19e3e47f06b6e7bf25822ee`.
+La conversión cambia el digest del manifiesto. También se verificó una descarga
+desde Zot con:
+
+```bash
+docker pull --platform=linux/amd64 34.170.72.85.sslip.io/grafana:v1
+```
+
+### Actualización del Operator y creación de GrafanaInstance
+
+Como el Dockerfile del Operator copia `watches.yaml` y `helm-charts`, fue
+necesario construir y publicar una nueva versión que incluyera Grafana:
+
+```bash
+make docker-build docker-push IMG=34.170.72.85.sslip.io/platform-operator:v2
+make deploy IMG=34.170.72.85.sslip.io/platform-operator:v2
+kubectl rollout status deployment/platform-operator-controller-manager -n platform-operator-system --timeout=300s
+```
+
+`make deploy` actualiza las CRD, los permisos y el controlador; por sí solo no
+crea una instancia de Grafana. El recurso de ejemplo quedó así:
+
+```yaml
+apiVersion: monitoring.so1.local/v1alpha1
+kind: GrafanaInstance
+metadata:
+  name: grafanainstance-sample
+  namespace: proyecto3
+spec:
+  replicaCount: 1
+```
+
+Aplicamos el recurso y consultamos los objetos creados por el Operator:
+
+```bash
+kubectl apply -f config/samples/monitoring_v1alpha1_grafanainstance.yaml
+kubectl get grafanainstances -n proyecto3
+kubectl get deployments,pods,services,pvc -n proyecto3 -l app.kubernetes.io/instance=grafanainstance-sample
+kubectl rollout status deployment/grafanainstance-sample -n proyecto3 --timeout=300s
+```
+
+El Operator genera y mantiene el Deployment, Service y PVC desde su chart; no
+se aplican esas plantillas por separado con `kubectl apply`. Durante la
+comprobación del 18 de octubre de 2026, el controlador utilizaba
+`platform-operator:v2`, Grafana estaba `1/1 Running`, el Service exponía
+`3000/TCP` y el PVC `grafanainstance-sample-data` estaba `Bound`, con `1Gi`,
+acceso `RWO` y StorageClass `standard-rwo`.
+
+### Acceso al dashboard y consulta de logs
+
+Como el Service es `ClusterIP`, accedemos desde el equipo local con:
+
+```bash
+kubectl port-forward -n proyecto3 service/grafanainstance-sample 3000:3000
+```
+
+Dejamos esa terminal abierta e ingresamos en `http://localhost:3000` con el
+usuario y contraseña del Secret. `Ctrl+C` termina el túnel, sin detener Grafana.
+No se añadió una ruta pública de Grafana al Gateway. Para consultar sus logs
+utilizamos otra terminal:
+
+```bash
+kubectl logs -n proyecto3 deployment/grafanainstance-sample --tail=100 -f
+```
+
+Si el Pod todavía no arranca por un error de descarga de imagen, se consultan
+sus eventos con `kubectl describe pod NOMBRE_DEL_POD -n proyecto3`; no hay logs
+de aplicación hasta que el contenedor pueda ejecutarse.
+
+### Conexión con Valkey y creación de los paneles
+
+En la interfaz de Grafana se configuró el plugin `redis-datasource` y una fuente
+de datos de tipo Redis para consultar Valkey. El servicio se encuentra en el
+mismo namespace, por lo que se utiliza `redis://valkeyinstance-sample:6379`,
+cliente `Standalone` y base de datos `0`, sin contraseña en la configuración
+actual de Valkey.
+
+Se prepararon los siguientes paneles con las claves del Consumer:
+
+- Máximos y mínimos de cada reporte: consulta `HGETALL system::reports`.
+  Como el plugin devuelve una columna por UUID, primero se aplica `Reduce`
+  con modo `Series to rows` y cálculo `Last`; después `Extract fields`, con
+  origen `Last` y formato `JSON`. En los paneles `Stat` se selecciona el campo
+  `warplanes_in_air` o `warships_in_water` y el cálculo `Max` o `Min`.
+- Modas: consultas `GET system::airplanesMode` y `GET system::shipsMode`,
+  calculadas previamente por el Consumer.
+- Rankings por país: consultas `GET` para `ranking::spainAirplanes`,
+  `ranking::usAirplanes`, `ranking::chinaAirplanes`, `ranking::russiaAirplanes`
+  y `ranking::gtmAirplanes`. Para barcos se usa el mismo prefijo de país con
+  el sufijo `Boats`. Se reúnen los resultados con `Reduce`, modo
+  `Series to rows` y cálculo `Last`, y se ordenan con `Sort by`, campo `Last`
+  y `Reverse` activado. El panel `Bar gauge` muestra `All values`.
+- País asignado y carnet: identificación `ESP` y `202201117`; el conteo de
+  reportes de España se obtiene con `GET system::spainCount`.
+- Evolución temporal: después de extraer los JSON de `system::reports`, se
+  convierte `timestamp` a `Time` y las cantidades a campos numéricos. Los
+  registros se ordenan por `timestamp` ascendente. Para mostrar el acumulado
+  se utiliza `Add field from calculation`, modo `Cumulative functions` y
+  operación `Total`, una vez para aviones y otra para barcos, conservando el
+  tiempo. El panel se representa como `Time series` y se actualiza mediante
+  el refresco del dashboard.
+
+Las claves `stream::WarplanesInAir` y `stream::WarshipsInWater` conservan solo
+el acumulado actual. Consultarlas con `GET` y streaming permite observar nuevas
+lecturas, pero no recupera sus valores anteriores. El historial del gráfico se
+reconstruye a partir de los reportes conservados en `system::reports`; el
+acumulado calculado por Grafana incluye únicamente los reportes consultados y
+usa la fecha enviada en cada reporte, no una fecha de recepción del Consumer.
+
+La captura muestra los paneles de máximos, mínimos, modas, rankings, identificación
+de España, conteo de reportes y evolución de aviones y barcos:
+
+![Dashboard de Grafana con estadísticas de reportes y rankings por país](imgs/DASHBOARD.png)
+
+La fuente de datos y el dashboard se configuraron desde la interfaz; el chart
+actual no incluye su provisioning ni un dashboard JSON exportado. La captura
+registra la visualización obtenida, pero no sustituye una prueba de conservación
+de la configuración después de reemplazar el Pod, que continúa pendiente.
+Consultar `HGETALL` en cada refresco también implica leer el historial completo.
+
+
+
 # Recursos
-
-https://www.youtube.com/watch?v=7s5X7GoYj8k
-
+[CONFIGURACIONES INICIALES GCP](https://www.youtube.com/watch?v=7s5X7GoYj8k)
+[Helm Operator de Operator SDK](https://sdk.operatorframework.io/docs/building-operators/helm/quickstart/),
+[compatibilidad de imágenes Docker con Zot](https://zotregistry.dev/v2.1.18/articles/docker/),
+[publicación de imágenes OCI](https://zotregistry.dev/v2.1.10/user-guides/user-guide-datapath/),
+[Grafana en Docker](https://grafana.com/docs/grafana/latest/setup-grafana/installation/docker/)
+y [transformaciones de Grafana](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/query-transform-data/transform-data/).

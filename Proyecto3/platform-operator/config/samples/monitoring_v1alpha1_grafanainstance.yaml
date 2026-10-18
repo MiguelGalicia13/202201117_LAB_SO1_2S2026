@@ -1,0 +1,7 @@
+apiVersion: monitoring.so1.local/v1alpha1
+kind: GrafanaInstance
+metadata:
+  name: grafanainstance-sample
+  namespace: proyecto3
+spec:
+  replicaCount: 1
