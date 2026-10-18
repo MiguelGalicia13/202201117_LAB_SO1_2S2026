@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: 34.170.72.85.sslip.io/platform-operator
-  newTag: v1
+  newTag: v2

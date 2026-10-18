@@ -59,6 +59,7 @@ rules:
   resources:
   - "serviceaccounts"
   - "services"
+  - "persistentvolumeclaims" 
 
 ##
 ## Rules for monitoring.so1.local/v1alpha1, Kind: GrafanaInstance
