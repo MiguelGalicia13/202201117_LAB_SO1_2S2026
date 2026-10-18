@@ -1418,12 +1418,12 @@ registra la visualización obtenida, pero no sustituye una prueba de conservaci�
 de la configuración después de reemplazar el Pod, que continúa pendiente.
 Consultar `HGETALL` en cada refresco también implica leer el historial completo.
 
-Referencias: [Helm Operator de Operator SDK](https://sdk.operatorframework.io/docs/building-operators/helm/quickstart/),
+
+
+# Recursos
+[CONFIGURACIONES INICIALES GCP](https://www.youtube.com/watch?v=7s5X7GoYj8k)
+[Helm Operator de Operator SDK](https://sdk.operatorframework.io/docs/building-operators/helm/quickstart/),
 [compatibilidad de imágenes Docker con Zot](https://zotregistry.dev/v2.1.18/articles/docker/),
 [publicación de imágenes OCI](https://zotregistry.dev/v2.1.10/user-guides/user-guide-datapath/),
 [Grafana en Docker](https://grafana.com/docs/grafana/latest/setup-grafana/installation/docker/)
 y [transformaciones de Grafana](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/query-transform-data/transform-data/).
-
-# Recursos
-https://www.youtube.com/watch?v=7s5X7GoYj8k
-
