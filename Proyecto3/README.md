@@ -1139,14 +1139,91 @@ terminó y `valkey-cli ping` respondió `PONG`.
 Esta evidencia confirma el despliegue y la respuesta local de Valkey. Las probes
 TCP y el comando `PING` no comprueban la escritura desde el Consumer ni la
 conservación de datos tras reemplazar el Pod. La siguiente captura registra el
-procesamiento del Consumer y la sección de Grafana documenta la etapa posterior;
-la prueba de persistencia tras reemplazar el Pod continúa pendiente.
+procesamiento del Consumer; la prueba de persistencia se documenta a continuación.
 
 Referencias: [Helm Operator de Operator SDK](https://sdk.operatorframework.io/docs/building-operators/helm/tutorial/),
 [StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
 y [persistencia de Valkey](https://valkey.io/topics/persistence/).
 
 ![](imgs/Consumer-log.png)
+
+### Prueba de persistencia al reemplazar el Pod de Valkey
+
+La persistencia depende de dos elementos: AOF escribe las operaciones en `/data`
+y el PVC `data-valkeyinstance-sample-0` conserva ese directorio fuera del ciclo
+de vida del contenedor. Al eliminar el Pod, el controlador del StatefulSet crea
+otro con el mismo nombre y vuelve a montar el PVC existente. Valkey recupera
+los datos desde los archivos persistidos, sin que el Consumer tenga que reenviar
+los reportes.
+
+#### 1. Registrar los datos antes del reemplazo
+
+Se consultaron la cantidad de reportes y los acumulados con:
+
+```bash
+kubectl exec -n proyecto3 valkeyinstance-sample-0 -- valkey-cli HLEN system::reports
+kubectl exec -n proyecto3 valkeyinstance-sample-0 -- valkey-cli MGET \
+  stream::WarplanesInAir stream::WarshipsInWater system::spainCount
+```
+
+La consulta inicial muestra **2052 reportes**, **51249 aviones**, **30949 barcos**
+y **392 reportes de España**. También se obtuvo un UUID con `HRANDFIELD` y se
+leyó su JSON mediante `HGET`, comprobando que el historial contenía reportes.
+
+![Datos iniciales de Valkey: cantidad de reportes, acumulados y un reporte del historial](imgs/PersistenciaValkey/VerificacionInicial.png)
+
+#### 2. Identificar el Pod y su almacenamiento
+
+La siguiente consulta registra los UID del Pod y del PVC, además del volumen
+persistente asociado al PVC:
+
+```bash
+kubectl get pod/valkeyinstance-sample-0 pvc/data-valkeyinstance-sample-0 \
+  -n proyecto3 -o custom-columns=TIPO:.kind,NOMBRE:.metadata.name,UID:.metadata.uid,PV:.spec.volumeName
+```
+
+El Pod y el PVC son recursos distintos: reemplazar el primero no implica borrar
+el segundo. El PVC mantiene su asociación con el volumen que almacena `/data`.
+
+![Identificación del Pod de Valkey, su PVC y el volumen persistente asociado](imgs/PersistenciaValkey/PodPCV.png)
+
+#### 3. Eliminar solamente el Pod
+
+Para simular su reemplazo se ejecutó:
+
+```bash
+kubectl delete pod valkeyinstance-sample-0 -n proyecto3
+kubectl get pods -n proyecto3
+```
+
+Esta operación interrumpe temporalmente Valkey porque hay una sola réplica.
+No se elimina el PVC ni el recurso `ValkeyInstance`. La captura muestra que el
+StatefulSet recreó `valkeyinstance-sample-0` y que volvió a estar `Running` y
+`1/1 Ready`. Es importante indicar `-n proyecto3`: consultar el namespace
+predeterminado no muestra estos Pods.
+
+![Eliminación del Pod y recreación de Valkey por el StatefulSet](imgs/PersistenciaValkey/DeletePod.png)
+
+#### 4. Verificar los datos después del reemplazo
+
+Con el nuevo Pod listo, se repitieron las consultas de `HLEN` y `MGET`. La
+verificación conserva los mismos valores: **2052 reportes**, **51249 aviones**,
+**30949 barcos** y **392 reportes de España**. También se pudo leer un reporte
+del historial.
+
+![Verificación de los reportes y acumulados después de recrear el Pod de Valkey](imgs/PersistenciaValkey/Verificacion.png)
+
+El primer intento de la captura contiene varios comandos pegados en una misma
+línea y devuelve un error de argumentos; las consultas ejecutadas después,
+por separado, son las que muestran los resultados válidos. Los UUID de ejemplo
+antes y después son distintos porque `HRANDFIELD` selecciona un campo aleatorio:
+no representan una comparación del mismo reporte individual.
+
+La evidencia demuestra la conservación de los acumulados y de la cantidad de
+reportes al reemplazar el Pod usando su almacenamiento existente. No es una
+prueba de recuperación ante pérdida del volumen ni sustituye un respaldo.
+La política AOF `appendfsync everysec` tampoco garantiza conservar el último
+segundo de escrituras ante una caída abrupta del servidor.
 
 ## Operator Helm y despliegue de Grafana
 
