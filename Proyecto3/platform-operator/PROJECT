@@ -25,4 +25,11 @@ resources:
   group: monitoring
   kind: GrafanaInstance
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: so1.local
+  group: security
+  kind: FalcoInstance
+  version: v1alpha1
 version: "3"

@@ -2,4 +2,5 @@
 resources:
 - cache_v1alpha1_valkeyinstance.yaml
 - monitoring_v1alpha1_grafanainstance.yaml
+- security_v1alpha1_falcoinstance.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

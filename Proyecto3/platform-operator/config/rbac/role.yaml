@@ -92,4 +92,42 @@ rules:
   - "serviceaccounts"
   - "services"
 
+##
+## Rules for security.so1.local/v1alpha1, Kind: FalcoInstance
+##
+- apiGroups:
+  - security.so1.local
+  resources:
+  - falcoinstances
+  - falcoinstances/status
+  - falcoinstances/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- verbs:
+  - "*"
+  apiGroups:
+  - ""
+  resources:
+  - "configmaps"
+  - "serviceaccounts"
+- verbs:
+  - "*"
+  apiGroups:
+  - "rbac.authorization.k8s.io"
+  resources:
+  - "rolebindings"
+  - "roles"
+- verbs:
+  - "*"
+  apiGroups:
+  - "apps"
+  resources:
+  - "daemonsets"
+
 # +kubebuilder:scaffold:rules
