@@ -1,0 +1,15 @@
+driver:
+  kind: modern_ebpf
+
+tty: true
+
+image:
+  registry: 34.170.72.85.sslip.io
+  repository: falco
+  tag: "0.45.0"
+
+falcoctl:
+  image:
+    registry: 34.170.72.85.sslip.io
+    repository: falcoctl
+    tag: "0.14.2"
