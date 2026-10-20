@@ -4,5 +4,4 @@
 resources:
 - bases/cache.so1.local_valkeyinstances.yaml
 - bases/monitoring.so1.local_grafanainstances.yaml
-- bases/security.so1.local_falcoinstances.yaml
 # +kubebuilder:scaffold:crdkustomizeresource

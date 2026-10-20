@@ -22,9 +22,6 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the platform-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
-- security_falcoinstance_admin_role.yaml
-- security_falcoinstance_editor_role.yaml
-- security_falcoinstance_viewer_role.yaml
 - monitoring_grafanainstance_admin_role.yaml
 - monitoring_grafanainstance_editor_role.yaml
 - monitoring_grafanainstance_viewer_role.yaml
