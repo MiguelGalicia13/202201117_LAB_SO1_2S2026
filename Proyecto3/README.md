@@ -1495,7 +1495,124 @@ registra la visualización obtenida, pero no sustituye una prueba de conservaci�
 de la configuración después de reemplazar el Pod, que continúa pendiente.
 Consultar `HGETALL` en cada refresco también implica leer el historial completo.
 
+## Observabilidad de seguridad con Falco
 
+Se incorporó Falco para detectar actividad de seguridad en tiempo de ejecución
+mediante eventos del sistema. Esta observabilidad complementa las estadísticas
+del dashboard de Grafana: permite identificar accesos a archivos sensibles y
+actividad de shells en los contenedores, pero no bloquea esas operaciones.
+
+### 1. Añadir el repositorio de Helm
+
+Se agregó el repositorio oficial y se actualizaron los índices de charts:
+
+```bash
+helm repo add falcosecurity https://falcosecurity.github.io/charts
+helm repo update
+```
+
+### 2. Publicar las imágenes en Zot
+
+Se etiquetaron y subieron las imágenes de Falco y falcoctl al registry del
+proyecto. Una vez etiquetadas con sus referencias de destino, se publican con:
+
+```bash
+docker push 34.170.72.85.sslip.io/falco:0.45.0
+docker push 34.170.72.85.sslip.io/falcoctl:0.14.2
+```
+
+Estas referencias se configuraron posteriormente en el archivo de valores para
+que Helm despliegue las imágenes desde Zot. falcoctl administra artefactos de
+Falco, como sus reglas; su imagen se configura por separado de la de Falco.
+
+### 3. Instalar Falco
+
+La instalación inicial se realizó con el release `falco`, creando su namespace
+y habilitando `tty`:
+
+```bash
+helm install --replace falco falcosecurity/falco \
+  --namespace falco \
+  --create-namespace \
+  --set tty=true
+```
+
+`--replace` permite reutilizar el nombre de un release eliminado que permanece
+en el historial; no actualiza una instalación activa. Los cambios posteriores
+se aplican con `helm upgrade`.
+
+### 4. Configurar el archivo de valores y las reglas
+
+La configuración del proyecto se conserva en `Falco/values.yml`. Se seleccionó
+el driver `modern_ebpf`, que utiliza eBPF para capturar eventos del sistema y
+requiere soporte compatible en el kernel de los nodos. También se establecieron
+las imágenes publicadas en Zot:
+
+```yaml
+driver:
+  kind: modern_ebpf
+
+tty: true
+
+image:
+  registry: 34.170.72.85.sslip.io
+  repository: falco
+  tag: "0.45.0"
+
+falcoctl:
+  image:
+    registry: 34.170.72.85.sslip.io
+    repository: falcoctl
+    tag: "0.14.2"
+```
+
+El mismo archivo añade dos reglas mediante `customRules.proyecto3_rules.yml`:
+
+- **`Read of confidential file  Proyecto3`**: detecta la apertura para lectura
+  (`open_read`) de `/tmp/proyecto3-secrets.txt` o `/etc/shadow` dentro de
+  contenedores del namespace `proyecto3`. Genera una alerta `WARNING` con
+  namespace, Pod, proceso, archivo y UID del usuario, y las etiquetas
+  `proyecto3` y `filesystem`.
+- **`shell_in_container`**: detecta actividad de procesos `bash` o `ksh` con
+  UID `0` dentro de contenedores. Genera una alerta `WARNING` con información
+  del usuario, contenedor, shell, proceso padre y línea de comandos. Esta regla
+  no está limitada al namespace `proyecto3` ni incluye shells como `sh` o `ash`.
+
+### 5. Aplicar la configuración con Helm
+
+Desde el directorio `Proyecto3/Falco`, se actualizó el release utilizando la
+versión `9.2.0` del chart y el archivo `values.yml`:
+
+```bash
+helm upgrade falco falcosecurity/falco \
+  --namespace falco \
+  --version 9.2.0 \
+  -f values.yml
+```
+
+La versión del chart (`9.2.0`) es independiente de las versiones de las imágenes
+configuradas (`0.45.0` para Falco y `0.14.2` para falcoctl). Si se ejecuta desde
+`Proyecto3`, se debe usar `-f Falco/values.yml`.
+
+### Comprobación de la regla de lectura de archivos
+
+Para generar el evento se leyó un archivo de prueba, previamente creado con
+contenido ficticio, en el contenedor `grpc-server` de Go Deployment 2:
+
+```bash
+kubectl exec -n proyecto3 deployment/go-deployment-2 \
+  -c grpc-server -- cat /tmp/proyecto3-secrets.txt
+```
+
+![Lectura del archivo confidencial de prueba dentro del contenedor grpc-server](imgs/cat-secrets.png)
+
+La captura de logs muestra alertas `Warning` con el mensaje de la regla, el
+namespace `proyecto3`, el Pod de Go Deployment 2, el proceso `cat`, el archivo
+`/tmp/proyecto3-secrets.txt` y el UID `10001`. Esto evidencia la detección de la
+lectura de prueba; no demuestra la ejecución de la regla `shell_in_container`
+ni una prueba de acceso a `/etc/shadow`.
+
+![Alertas de Falco por la lectura del archivo de prueba en el namespace proyecto3](imgs/log-falco.png)
 
 # Recursos
 [CONFIGURACIONES INICIALES GCP](https://www.youtube.com/watch?v=7s5X7GoYj8k)
