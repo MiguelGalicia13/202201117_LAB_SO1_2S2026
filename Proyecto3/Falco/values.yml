@@ -29,3 +29,15 @@ customRules:
         proceso=%proc.name archivo=%fd.name usuario=%user.uid)
       priority: WARNING
       tags: [proyecto3, filesystem]
+    - rule: shell_in_container
+      desc: Notify when shell activity is detected
+      condition: >
+        container.id != host
+        and
+        (proc.name = bash or
+        proc.name = ksh)
+      output:
+        shell in a container |
+        user=%user.name container_id=%container.id container_name=%container.name 
+        shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline
+      priority: WARNING
