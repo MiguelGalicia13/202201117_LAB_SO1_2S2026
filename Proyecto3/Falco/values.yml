@@ -13,3 +13,19 @@ falcoctl:
     registry: 34.170.72.85.sslip.io
     repository: falcoctl
     tag: "0.14.2"
+
+customRules:
+  proyecto3_rules.yml: |-
+    - rule: Read of confidential file  Proyecto3
+      desc: Detects the readness operation of a confidential file in the project
+      condition: >
+        open_read
+        and container
+        and k8s.ns.name = proyecto3
+        and fd.name= "/tmp/proyecto3-secrets.txt"
+      output: >
+        Read of confidential file has been executed
+        (namespace=%k8s.ns.name pod=%k8s.pod.name
+        proceso=%proc.name archivo=%fd.name usuario=%user.uid)
+      priority: WARNING
+      tags: [proyecto3, filesystem]
